@@ -1,0 +1,133 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body.scene-renderer-body {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  background: #0e1827;
+}
+
+.scene-renderer {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: #0e1827;
+  isolation: isolate;
+}
+
+.scene-renderer > img {
+  position: absolute;
+  inset: 0;
+  z-index: -3;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  image-rendering: auto;
+  transition: filter 400ms ease, opacity 320ms ease;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.scene-shade {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: rgba(4, 8, 14, 0.08);
+  box-shadow: inset 0 90px 110px rgba(5, 8, 13, 0.3), inset 0 -100px 120px rgba(5, 7, 10, 0.46);
+  pointer-events: none;
+}
+
+.scene-renderer[data-state="quiet"] > img {
+  filter: brightness(0.78) saturate(0.85);
+}
+
+.scene-renderer[data-state="break"] > img {
+  filter: brightness(1.08) saturate(1.03);
+}
+
+.scene-renderer[data-state="away"] > img {
+  filter: brightness(0.64) saturate(0.75);
+}
+
+.rain-layer,
+.steam-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.rain-layer.hidden,
+.steam-layer.hidden {
+  display: none;
+}
+
+.rain-drop {
+  position: absolute;
+  top: -30px;
+  width: 1px;
+  height: var(--drop-length);
+  background: rgba(171, 207, 245, 0.38);
+  animation: rain-fall var(--drop-speed) linear infinite;
+  animation-delay: var(--drop-delay);
+  transform: rotate(10deg);
+}
+
+@keyframes rain-fall {
+  to {
+    transform: translate(80px, 110vh) rotate(10deg);
+  }
+}
+
+.steam-wisp {
+  position: absolute;
+  width: 11px;
+  height: 28px;
+  border-left: 2px solid rgba(238, 229, 210, 0.62);
+  border-radius: 50%;
+  opacity: 0;
+  filter: blur(0.55px);
+  animation: steam-rise var(--steam-speed) ease-out infinite;
+  animation-delay: var(--steam-delay);
+  transform-origin: center bottom;
+}
+
+@keyframes steam-rise {
+  0% {
+    opacity: 0;
+    transform: translate(0, 5px) scale(0.7, 0.55);
+  }
+
+  18% {
+    opacity: var(--steam-opacity);
+  }
+
+  58% {
+    opacity: 0.25;
+    transform: translate(var(--steam-drift-mid), -17px) scale(0.92, 1.05);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(var(--steam-drift), -43px) scale(1.2, 1.28);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .steam-wisp {
+    animation-duration: 7s;
+  }
+}

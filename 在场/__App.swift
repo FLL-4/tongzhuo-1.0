@@ -13,5 +13,10 @@ struct __App: App {
         WindowGroup {
             ContentView()
         }
+#if os(macOS)
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1400, height: 860)
+#endif
     }
 }

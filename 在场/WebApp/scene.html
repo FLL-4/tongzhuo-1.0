@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>在场 · 场景画布</title>
+    <link rel="stylesheet" href="./scene.css" />
+    <script defer src="./scene.js"></script>
+  </head>
+  <body class="scene-renderer-body" data-scene-renderer>
+    <main class="room-stage scene-renderer" id="room-stage" data-state="focus" aria-label="像素房间场景">
+      <img id="room-image" data-source="./assets/scenes/rainy-study/together.png" src="./assets/scenes/rainy-study/together.png" alt="雨夜中，两个人在像素书房里安静同桌" />
+      <div class="scene-shade" aria-hidden="true"></div>
+      <div class="rain-layer" id="rain-layer" aria-hidden="true"></div>
+      <div class="steam-layer hidden" id="steam-layer" aria-hidden="true"></div>
+    </main>
+  </body>
+</html>

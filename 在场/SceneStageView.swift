@@ -1,0 +1,466 @@
+import SwiftUI
+
+enum SceneStageLayout: Equatable {
+    case expanded
+    case compact
+}
+
+// MARK: - Scene Stage
+
+struct SceneStageView: View {
+    @ObservedObject var model: AppModel
+    let layout: SceneStageLayout
+    var bottomInset: CGFloat = 0
+    @State private var partnerPopoverPresented = false
+
+    var body: some View {
+        ZStack {
+            SceneWebView(state: SceneRenderState(model: model))
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text(model.selectedScene.eyebrow)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.amberSoft)
+                    .textCase(.uppercase)
+                Text(model.selectedScene.headline)
+                    .font(.system(size: layout == .compact ? 22 : 26, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: layout == .compact ? 255 : nil, alignment: .leading)
+            }
+            .shadow(color: .black.opacity(0.55), radius: 8, y: 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.top, 30)
+            .padding(.leading, 28)
+            .allowsHitTesting(false)
+
+            if let partner = model.currentDeskPartner {
+                Button {
+                    partnerPopoverPresented.toggle()
+                } label: {
+                    if layout == .compact {
+                        Text(partner.character)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(Palette.amberSoft)
+                            .frame(width: 34, height: 34)
+                            .adaptiveHitTarget(minWidth: 34, minHeight: 34)
+                            .background(Color(red: 0.34, green: 0.29, blue: 0.24))
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                            .overlay(alignment: .bottomTrailing) {
+                                Circle()
+                                    .fill(Palette.moss)
+                                    .frame(width: 8, height: 8)
+                                    .overlay(Circle().stroke(.black.opacity(0.7), lineWidth: 2))
+                                    .offset(x: 2, y: 2)
+                            }
+                    } else {
+                        HStack(spacing: 9) {
+                            Text(partner.character)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Palette.amberSoft)
+                                .frame(width: 34, height: 34)
+                                .background(Color(red: 0.34, green: 0.29, blue: 0.24))
+                                .clipShape(RoundedRectangle(cornerRadius: 5))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(partner.name)在这里").font(.system(size: 12, weight: .semibold))
+                                Text("已专注 \(partner.focusSeconds / 60) 分钟").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                            }
+                            Circle()
+                                .fill(Color(red: 0.45, green: 0.73, blue: 0.48))
+                                .frame(width: 7, height: 7)
+                        }
+                        .padding(.vertical, 7)
+                        .padding(.horizontal, 10)
+                        .adaptiveHitTarget(minHeight: 38)
+                        .background(.black.opacity(0.58))
+                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.16)))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                    }
+                }
+                .buttonStyle(ZaichangPlainButtonStyle())
+                .accessibilityLabel("查看同桌\(partner.name)的状态")
+                .popover(isPresented: $partnerPopoverPresented, arrowEdge: .top) {
+                    PartnerPopover(
+                        model: model,
+                        partner: partner,
+                        isPresented: $partnerPopoverPresented
+                    )
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, 24)
+                .padding(.trailing, 22)
+            } else if let room = model.currentDeskRoom {
+                Button {
+                    model.activeSheet = .desk
+                } label: {
+                    Label(layout == .compact ? "" : "等待同桌 · \(room.code)", systemImage: "hourglass")
+                        .font(.system(size: 11, weight: .medium))
+                        .padding(.horizontal, layout == .compact ? 10 : 12)
+                        .frame(minWidth: layout == .compact ? 38 : nil, minHeight: 38)
+                        .adaptiveHitTarget(minWidth: 38, minHeight: 38)
+                        .background(.black.opacity(0.58))
+                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.16)))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                }
+                .buttonStyle(ZaichangPlainButtonStyle())
+                .accessibilityLabel("查看等待中的同桌房间")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, 24)
+                .padding(.trailing, 22)
+            }
+
+            if let suggestion = model.activeSuggestion {
+                PresenceSuggestionView(model: model, suggestion: suggestion)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                    .padding(.leading, layout == .compact ? 14 : 28)
+                    .padding(.trailing, layout == .compact ? 14 : 28)
+                    .padding(.bottom, 86 + bottomInset)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            SceneControlsView(model: model, layout: layout)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                .padding(.horizontal, layout == .compact ? 14 : 22)
+                .padding(.bottom, 22 + bottomInset)
+        }
+        .clipped()
+    }
+}
+
+private struct PartnerPopover: View {
+    @ObservedObject var model: AppModel
+    let partner: DeskPartner
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 11) {
+                Text(partner.character)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Palette.amberSoft)
+                    .frame(width: 42, height: 42)
+                    .background(Color(red: 0.34, green: 0.29, blue: 0.24))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(partner.name).font(.system(size: 13, weight: .semibold))
+                    Label("专注中 · \(partner.focusText)", systemImage: "circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Palette.moss)
+                }
+            }
+            .padding(.bottom, 14)
+
+            Divider().overlay(Palette.line)
+
+            PopoverAction(title: "留一句话", symbol: "mic") {
+                open(.voice)
+            }
+            PopoverAction(title: "查看同桌房间", symbol: "person.2") {
+                open(.desk)
+            }
+        }
+        .padding(14)
+        .frame(width: 250)
+        .background(Palette.surface2)
+        .foregroundStyle(Palette.ink)
+    }
+
+    private func open(_ sheet: AppSheet) {
+        isPresented = false
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            model.activeSheet = sheet
+        }
+    }
+}
+
+private struct PopoverAction: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).frame(width: 18)
+                Text(title)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
+            .font(.system(size: 11, weight: .medium))
+            .adaptiveFullWidthHitTarget(minHeight: 38)
+        }
+        .buttonStyle(ZaichangPlainButtonStyle())
+    }
+}
+
+private struct PresenceSuggestionView: View {
+    @ObservedObject var model: AppModel
+    let suggestion: PresenceSuggestion
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "lamp.desk")
+                .foregroundStyle(Palette.amberSoft)
+                .frame(width: 30, height: 30)
+                .background(Color(red: 0.36, green: 0.28, blue: 0.18))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 7) {
+                Text("在场建议")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Palette.amberSoft)
+                Text(suggestion.message)
+                    .font(.system(size: 12))
+                    .lineLimit(3)
+
+                Button {
+                    model.performSuggestion(suggestion.id)
+                } label: {
+                    Label(suggestion.actionTitle, systemImage: suggestion.action.symbol)
+                        .font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 30)
+                        .adaptiveHitTarget(minHeight: 30)
+                        .foregroundStyle(Color(red: 0.17, green: 0.13, blue: 0.09))
+                        .background(Palette.amber)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(ZaichangPlainButtonStyle())
+            }
+            .frame(maxWidth: 330, alignment: .leading)
+            .layoutPriority(1)
+
+            Button {
+                model.dismissSuggestion(suggestion.id)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .adaptiveHitTarget(minWidth: 28, minHeight: 28)
+            }
+            .buttonStyle(ZaichangPlainButtonStyle())
+            .accessibilityLabel("关闭在场建议")
+        }
+        .padding(10)
+        .background(.black.opacity(0.70))
+        .overlay(alignment: .leading) { Rectangle().fill(Palette.amber).frame(width: 2) }
+        .frame(maxWidth: 480, alignment: .leading)
+    }
+}
+
+private extension PresenceSuggestionAction {
+    var symbol: String {
+        switch self {
+        case .beginFocus: "play.fill"
+        case .openVoiceRecorder: "mic"
+        case .openDeskRoom: "person.2"
+        case .beginRest: "cup.and.saucer"
+        }
+    }
+}
+
+private struct SceneControlsView: View {
+    @ObservedObject var model: AppModel
+    let layout: SceneStageLayout
+    @State private var presencePickerPresented = false
+
+    @ViewBuilder
+    var body: some View {
+        if layout == .compact {
+            GlassEffectContainer(spacing: 8) {
+                compactControls
+            }
+        } else {
+            GlassEffectContainer(spacing: 10) {
+                expandedControls
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var expandedControls: some View {
+        HStack(spacing: 10) {
+            Button {
+                presencePickerPresented.toggle()
+            } label: {
+                HStack(spacing: 8) {
+                    Circle().fill(Palette.moss).frame(width: 8, height: 8)
+                    Text(model.presence.title).font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "chevron.up").font(.system(size: 9, weight: .bold))
+                }
+                .frame(width: 126, height: 46)
+                .liquidSceneControl()
+            }
+            .buttonStyle(ZaichangPlainButtonStyle())
+            .popover(isPresented: $presencePickerPresented, arrowEdge: .bottom) {
+                VStack(spacing: 0) {
+                    ForEach(PresenceMode.allCases) { mode in
+                        Button {
+                            model.setPresence(mode)
+                            presencePickerPresented = false
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: mode.symbol)
+                                    .foregroundStyle(Palette.amber)
+                                    .frame(width: 20)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(mode.title).font(.system(size: 12, weight: .semibold))
+                                    Text(mode.detail).font(.system(size: 10)).foregroundStyle(Palette.muted)
+                                }
+                                Spacer()
+                                if model.presence == mode {
+                                    Image(systemName: "checkmark").foregroundStyle(Palette.moss)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .frame(width: 240, height: 50)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(ZaichangPlainButtonStyle())
+                        if mode != PresenceMode.allCases.last {
+                            Divider().overlay(Palette.line)
+                        }
+                    }
+                }
+                .padding(.vertical, 6)
+                .background(Palette.surface2)
+            }
+
+            HStack(spacing: 4) {
+                Button { model.toggleTimer() } label: {
+                    Image(systemName: model.timerRunning ? "pause" : "play")
+                        .adaptiveHitTarget(minWidth: 32, minHeight: 32)
+                }
+                .accessibilityLabel(model.timerRunning ? "暂停计时" : "开始计时")
+                .help(model.timerRunning ? "暂停计时" : "开始计时")
+                VStack(spacing: 1) {
+                    Text(model.timerText)
+                        .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                    Text("方案收尾").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                }
+                .frame(width: 72)
+                Button { model.resetTimer() } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .adaptiveHitTarget(minWidth: 32, minHeight: 32)
+                }
+                .accessibilityLabel("重置计时器")
+                .help("重置计时器")
+            }
+            .buttonStyle(ZaichangPlainButtonStyle())
+            .frame(height: 46)
+            .padding(.horizontal, 5)
+            .liquidSceneControl()
+
+            SceneIconButton(
+                symbol: "cloud.sun",
+                isOn: model.weatherEffectsEnabled,
+                onColor: Palette.blue,
+                help: "窗外天气",
+                action: model.toggleWeather
+            )
+            SceneIconButton(
+                symbol: model.ambientEnabled ? "speaker.wave.2" : "speaker.slash",
+                isOn: model.ambientEnabled,
+                onColor: Palette.blue,
+                help: model.selectedScene.ambientPreset.displayName,
+                action: model.toggleAmbient
+            )
+        }
+    }
+
+    private var compactControls: some View {
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(PresenceMode.allCases) { mode in
+                    Button {
+                        model.setPresence(mode)
+                    } label: {
+                        Label(mode.title, systemImage: mode.symbol)
+                    }
+                }
+            } label: {
+                Label(model.presence.title, systemImage: model.presence.symbol)
+                    .font(.system(size: 11, weight: .semibold))
+                    .lineLimit(1)
+                    .frame(width: 96, height: 44)
+                    .liquidSceneControl()
+            }
+            .buttonStyle(ZaichangPlainButtonStyle())
+            .menuIndicator(.hidden)
+
+            HStack(spacing: 2) {
+                Button { model.toggleTimer() } label: {
+                    Image(systemName: model.timerRunning ? "pause" : "play")
+                        .adaptiveHitTarget(minWidth: 26, minHeight: 30)
+                }
+                .accessibilityLabel(model.timerRunning ? "暂停计时" : "开始计时")
+                Text(model.timerText)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .frame(width: 60)
+                Button { model.resetTimer() } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .adaptiveHitTarget(minWidth: 26, minHeight: 30)
+                }
+                .accessibilityLabel("重置计时器")
+            }
+            .buttonStyle(ZaichangPlainButtonStyle())
+            .frame(
+                width: InteractionMetrics.minimumHitDimension * 2 + 64,
+                height: 44
+            )
+            .liquidSceneControl()
+
+            Menu {
+                Toggle(isOn: binding(for: \AppModel.weatherEffectsEnabled, toggle: model.toggleWeather)) {
+                    Label("窗外天气", systemImage: "cloud.sun")
+                }
+                Toggle(isOn: binding(for: \AppModel.ambientEnabled, toggle: model.toggleAmbient)) {
+                    Label(model.selectedScene.ambientPreset.displayName, systemImage: "speaker.wave.2")
+                }
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 44, height: 44)
+                    .liquidSceneControl()
+            }
+            .buttonStyle(ZaichangPlainButtonStyle())
+            .menuIndicator(.hidden)
+            .accessibilityLabel("场景选项")
+        }
+    }
+
+    private func binding(
+        for keyPath: KeyPath<AppModel, Bool>,
+        toggle: @escaping () -> Void
+    ) -> Binding<Bool> {
+        Binding(
+            get: { model[keyPath: keyPath] },
+            set: { newValue in
+                if newValue != model[keyPath: keyPath] { toggle() }
+            }
+        )
+    }
+}
+
+private struct SceneIconButton: View {
+    let symbol: String
+    let isOn: Bool
+    let onColor: Color
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(isOn ? onColor : Color.gray)
+                .frame(width: 46, height: 46)
+                .liquidSceneControl()
+        }
+        .buttonStyle(ZaichangPlainButtonStyle())
+        .help(help)
+        .accessibilityLabel(help)
+        .accessibilityValue(isOn ? "已打开" : "已关闭")
+    }
+}

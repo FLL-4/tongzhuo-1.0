@@ -8,14 +8,34 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var model = AppModel()
+#if os(iOS)
+    @Environment(\.scenePhase) private var scenePhase
+#endif
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
+        AppShellView(model: model)
+            .preferredColorScheme(.dark)
+#if os(macOS)
+            .ignoresSafeArea(.container, edges: .top)
+            .frame(minWidth: 980, minHeight: 620)
+#endif
+            .onAppear { model.activateAudio() }
+            .onDisappear { model.deactivateAudio() }
+#if os(iOS)
+            .onChange(of: scenePhase) { _, phase in
+                switch phase {
+                case .active:
+                    model.activateAudio()
+                case .background:
+                    model.enterMobileBackground()
+                case .inactive:
+                    break
+                @unknown default:
+                    model.deactivateAudio()
+                }
+            }
+#endif
     }
 }
 
