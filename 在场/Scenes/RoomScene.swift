@@ -130,6 +130,32 @@ struct RoomScene: Codable, Equatable, Identifiable {
     }
 }
 
+/// Stores user-created scene metadata separately from bundled catalog content.
+/// Image bytes live in `SceneAssetStore` and are referenced by relative path.
+final class ScenePersistence {
+    private let fileManager: FileManager
+    private let fileURL: URL
+
+    init(fileManager: FileManager = .default, fileURL: URL? = nil) {
+        self.fileManager = fileManager
+        self.fileURL = fileURL ?? fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Zaichang", isDirectory: true)
+            .appendingPathComponent("generated-scenes.json")
+    }
+
+    func load() -> [RoomScene] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let scenes = try? JSONDecoder().decode([RoomScene].self, from: data) else { return [] }
+        return scenes.filter { $0.origin == .generated && SceneGenerationContract.isValidSceneID($0.id) }
+    }
+
+    func save(_ scenes: [RoomScene]) throws {
+        let directory = fileURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(scenes.filter { $0.origin == .generated }).write(to: fileURL, options: .atomic)
+    }
+}
+
 enum RoomSceneCatalog {
     static let focus = BaseActivityState(
         id: "focus",

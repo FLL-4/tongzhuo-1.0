@@ -1,90 +1,235 @@
 #if os(macOS)
 import AppKit
+import Combine
 import SwiftUI
 
-/// 管理桌宠浮动窗口：主窗口最小化时桌宠从原位置"掉落"到屏幕右下角，
-/// 主窗口恢复时桌宠回到应用内。
+/// Reports the exact AppKit window hosting a SwiftUI hierarchy.
+/// This avoids racing `NSApplication.shared.windows` during app launch.
+struct HostingWindowReader: NSViewRepresentable {
+    let onWindowChange: @MainActor (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> HostingWindowProbe {
+        HostingWindowProbe(onWindowChange: onWindowChange)
+    }
+
+    func updateNSView(_ nsView: HostingWindowProbe, context: Context) {
+        nsView.onWindowChange = onWindowChange
+        nsView.reportWindowIfNeeded()
+    }
+}
+
+final class HostingWindowProbe: NSView {
+    var onWindowChange: @MainActor (NSWindow?) -> Void
+    private weak var reportedWindow: NSWindow?
+
+    init(onWindowChange: @escaping @MainActor (NSWindow?) -> Void) {
+        self.onWindowChange = onWindowChange
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        reportWindowIfNeeded()
+    }
+
+    func reportWindowIfNeeded() {
+        guard reportedWindow !== window else { return }
+        reportedWindow = window
+        onWindowChange(window)
+    }
+}
+
+/// Owns the desktop pet panel while the app's main window is miniaturized.
 @MainActor
-final class FloatingDeskPetWindow {
+final class FloatingDeskPetWindow: NSObject {
     static let shared = FloatingDeskPetWindow()
 
     private var panel: NSPanel?
     private var hostingView: NSHostingView<AnyView>?
-    private var miniaturizeObserver: Any?
-    private var deminiaturizeObserver: Any?
-    private var willMiniaturizeObserver: Any?
     private weak var mainWindow: NSWindow?
     private weak var controller: DeskPetController?
     private var onDoubleTap: (() -> Void)?
+    private var profileObservation: AnyCancellable?
+    private var animationID = UUID()
 
-    private init() {}
-
-    // MARK: - Public
-
-    func setup(controller: DeskPetController, onDoubleTap: @escaping () -> Void) {
-        self.controller = controller
-        self.onDoubleTap = onDoubleTap
-
-        // 延迟获取主窗口（onAppear 时窗口可能还没就绪）
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.bindToMainWindow(controller: controller)
-        }
+    override init() {
+        super.init()
     }
 
-    private func bindToMainWindow(controller: DeskPetController) {
-        guard let window = NSApplication.shared.windows.first(where: {
-            !($0 is NSPanel) && $0.isVisible
-        }) else { return }
+    // MARK: - Window lifecycle
 
+    func attach(
+        to window: NSWindow?,
+        controller: DeskPetController,
+        onDoubleTap: @escaping () -> Void
+    ) {
+        self.onDoubleTap = onDoubleTap
+        observeProfileChanges(on: controller)
+
+        guard mainWindow !== window else {
+            reconcilePanelVisibility()
+            return
+        }
+
+        stopObservingWindow()
         mainWindow = window
 
-        willMiniaturizeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.willMiniaturizeNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            self?.showFloatingPet(controller: controller)
+        guard let window else {
+            dismissPanel()
+            return
         }
 
-        deminiaturizeObserver = NotificationCenter.default.addObserver(
-            forName: NSWindow.didDeminiaturizeNotification,
-            object: window,
-            queue: .main
-        ) { [weak self] _ in
-            self?.hideFloatingPet()
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(windowWillMiniaturize(_:)),
+            name: NSWindow.willMiniaturizeNotification,
+            object: window
+        )
+        center.addObserver(
+            self,
+            selector: #selector(windowDidDeminiaturize(_:)),
+            name: NSWindow.didDeminiaturizeNotification,
+            object: window
+        )
+        center.addObserver(
+            self,
+            selector: #selector(windowWillClose(_:)),
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
+
+        reconcilePanelVisibility()
+    }
+
+    private func observeProfileChanges(on controller: DeskPetController) {
+        guard self.controller !== controller else { return }
+
+        profileObservation?.cancel()
+        self.controller?.isFloating = false
+        self.controller = controller
+        profileObservation = controller.$profile
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.reconcilePanelVisibility()
+                }
+            }
+    }
+
+    private func stopObservingWindow() {
+        if let mainWindow {
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSWindow.willMiniaturizeNotification,
+                object: mainWindow
+            )
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSWindow.didDeminiaturizeNotification,
+                object: mainWindow
+            )
+            NotificationCenter.default.removeObserver(
+                self,
+                name: NSWindow.willCloseNotification,
+                object: mainWindow
+            )
         }
     }
 
-    func showFloatingPet(controller: DeskPetController) {
-        guard let profile = controller.activeProfile else { return }
-        guard panel == nil else { return }
-        guard let screen = NSScreen.main else { return }
+    @objc private func windowWillMiniaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow === mainWindow else { return }
+        showFloatingPet()
+    }
 
-        // 标记为浮动状态，隐藏场景内的桌宠
+    @objc private func windowDidDeminiaturize(_ notification: Notification) {
+        guard notification.object as? NSWindow === mainWindow else { return }
+        hideFloatingPet(animated: true)
+    }
+
+    @objc private func windowWillClose(_ notification: Notification) {
+        guard notification.object as? NSWindow === mainWindow else { return }
+        stopObservingWindow()
+        mainWindow = nil
+        dismissPanel()
+    }
+
+    private func reconcilePanelVisibility() {
+        guard let controller else {
+            dismissPanel()
+            return
+        }
+
+        guard controller.activeProfile != nil else {
+            dismissPanel()
+            return
+        }
+
+        if mainWindow?.isMiniaturized == true {
+            showFloatingPet()
+        } else if panel != nil {
+            hideFloatingPet(animated: false)
+        } else {
+            controller.isFloating = false
+        }
+    }
+
+    // MARK: - Floating panel
+
+    private func showFloatingPet() {
+        guard
+            let controller,
+            let profile = controller.activeProfile,
+            let screen = mainWindow?.screen ?? NSScreen.main
+        else { return }
+
         controller.isFloating = true
 
-        let screenFrame = screen.visibleFrame
-
-        // 桌宠在应用内的实际大小（和 DeskPetOverlay 中的计算一致）
         let petSize = petSizeFromMainWindow()
-
-        // 起始位置：桌宠在主窗口中的屏幕坐标（右下角）
-        let startPosition = petScreenPosition(petSize: petSize)
-
-        // 最终位置：屏幕右下角
+        let screenFrame = screen.visibleFrame
         let margin: CGFloat = 20
-        let finalX = screenFrame.maxX - petSize - margin
-        let finalY = screenFrame.minY + margin
+        let destination = NSRect(
+            x: screenFrame.maxX - petSize - margin,
+            y: screenFrame.minY + margin,
+            width: petSize,
+            height: petSize
+        )
 
-        let petView = FloatingDeskPetView(
+        let panel = panel ?? makePanel(
             controller: controller,
             profile: profile,
             size: petSize,
-            onDoubleTap: onDoubleTap ?? {}
+            origin: petScreenPosition(petSize: petSize)
         )
+        let currentAnimationID = UUID()
+        animationID = currentAnimationID
 
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.7
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().setFrame(destination, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard self?.animationID == currentAnimationID else { return }
+                self?.bouncePanel(at: destination, animationID: currentAnimationID)
+            }
+        }
+    }
+
+    private func makePanel(
+        controller: DeskPetController,
+        profile: DeskPetProfile,
+        size: CGFloat,
+        origin: NSPoint
+    ) -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: startPosition.x, y: startPosition.y, width: petSize, height: petSize),
+            contentRect: NSRect(x: origin.x, y: origin.y, width: size, height: size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -93,120 +238,117 @@ final class FloatingDeskPetWindow {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
 
-        let hosting = NSHostingView(rootView: AnyView(petView))
-        hosting.frame = NSRect(x: 0, y: 0, width: petSize, height: petSize)
-        panel.contentView = hosting
+        let hostingView = NSHostingView(
+            rootView: AnyView(
+                FloatingDeskPetView(
+                    controller: controller,
+                    profile: profile,
+                    size: size,
+                    onDoubleTap: onDoubleTap ?? {}
+                )
+            )
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: size, height: size)
+        panel.contentView = hostingView
 
         self.panel = panel
-        self.hostingView = hosting
-
-        panel.orderFrontRegardless()
-
-        // 从原位置掉落到屏幕右下角
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.7
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            panel.animator().setFrame(
-                NSRect(x: finalX, y: finalY, width: petSize, height: petSize),
-                display: true
-            )
-        } completionHandler: {
-            self.bounceAnimation(finalX: finalX, finalY: finalY, petSize: petSize)
-        }
+        self.hostingView = hostingView
+        return panel
     }
 
-    func hideFloatingPet() {
-        guard let panel else { return }
+    private func hideFloatingPet(animated: Bool) {
+        guard let panel else {
+            controller?.isFloating = false
+            return
+        }
+
+        guard animated, mainWindow != nil else {
+            dismissPanel()
+            return
+        }
 
         let petSize = panel.frame.width
-
-        // 回到主窗口原位置
-        let targetPosition = petScreenPosition(petSize: petSize)
+        let target = NSRect(
+            origin: petScreenPosition(petSize: petSize),
+            size: panel.frame.size
+        )
+        let currentAnimationID = UUID()
+        animationID = currentAnimationID
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.4
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrame(
-                NSRect(x: targetPosition.x, y: targetPosition.y, width: petSize, height: petSize),
-                display: true
-            )
+            panel.animator().setFrame(target, display: true)
         } completionHandler: { [weak self] in
-            // 动画结束后再恢复场景内桌宠并销毁浮动窗口
-            self?.controller?.isFloating = false
-            self?.dismissPanel()
+            Task { @MainActor [weak self] in
+                guard self?.animationID == currentAnimationID else { return }
+                self?.dismissPanel()
+            }
         }
     }
 
-    // MARK: - Private
+    private func bouncePanel(at destination: NSRect, animationID: UUID) {
+        guard let panel, self.animationID == animationID else { return }
 
-    /// 计算桌宠在应用内的尺寸（和 DeskPetOverlay GeometryReader 逻辑一致）
-    private func petSizeFromMainWindow() -> CGFloat {
-        guard let window = mainWindow else { return 136 }
-        let frame = window.frame
-        // 场景区域大约是窗口减去侧边栏(72)和右侧面板(320)
-        let sceneWidth = frame.width - 72 - 320
-        let sceneHeight = frame.height
-        let size = min(sceneWidth, sceneHeight) * 0.22
-        return min(max(size, 80), 200)
-    }
-
-    /// 计算桌宠在主窗口中的屏幕坐标（右下角位置）
-    private func petScreenPosition(petSize: CGFloat) -> NSPoint {
-        guard let window = mainWindow else {
-            let screen = NSScreen.main!.visibleFrame
-            return NSPoint(x: screen.maxX - petSize - 22, y: screen.midY)
-        }
-        let windowFrame = window.frame
-        // 桌宠在场景内的位置：右下角，padding trailing 22, bottom 84
-        let x = windowFrame.maxX - 320 - 22 - petSize  // 减去右侧面板宽度和 padding
-        let y = windowFrame.minY + 84  // bottom padding
-        return NSPoint(x: x, y: y)
-    }
-
-    private func bounceAnimation(finalX: CGFloat, finalY: CGFloat, petSize: CGFloat) {
-        guard let panel else { return }
-        let bounceHeight: CGFloat = 12
-
+        var raisedFrame = destination
+        raisedFrame.origin.y += 12
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.12
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrame(
-                NSRect(x: finalX, y: finalY + bounceHeight, width: petSize, height: petSize),
-                display: true
-            )
-        } completionHandler: {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.12
-                context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-                self.panel?.animator().setFrame(
-                    NSRect(x: finalX, y: finalY, width: petSize, height: petSize),
-                    display: true
-                )
+            panel.animator().setFrame(raisedFrame, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard
+                    let self,
+                    self.animationID == animationID,
+                    let panel = self.panel
+                else { return }
+
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.12
+                    context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                    panel.animator().setFrame(destination, display: true)
+                }
             }
         }
     }
 
     private func dismissPanel() {
+        animationID = UUID()
         panel?.orderOut(nil)
         panel = nil
         hostingView = nil
+        controller?.isFloating = false
     }
 
-    deinit {
-        if let observer = willMiniaturizeObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        if let observer = deminiaturizeObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
+    // MARK: - Geometry
+
+    private func petSizeFromMainWindow() -> CGFloat {
+        guard let window = mainWindow else { return 136 }
+        let sceneWidth = window.frame.width
+            - LayoutMetrics.sidebarWidth
+            - LayoutMetrics.contextPanelWidth
+        let size = min(sceneWidth, window.frame.height) * 0.22
+        return min(max(size, 80), 200)
     }
+
+    private func petScreenPosition(petSize: CGFloat) -> NSPoint {
+        guard let window = mainWindow else {
+            let screen = NSScreen.main?.visibleFrame ?? .zero
+            return NSPoint(x: screen.maxX - petSize - 22, y: screen.minY + 84)
+        }
+
+        return NSPoint(
+            x: window.frame.maxX - LayoutMetrics.contextPanelWidth - 22 - petSize,
+            y: window.frame.minY + 84
+        )
+    }
+
 }
-
-// MARK: - Floating Pet View
 
 private struct FloatingDeskPetView: View {
     @ObservedObject var controller: DeskPetController

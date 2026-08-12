@@ -1,18 +1,21 @@
 import SwiftUI
 
 struct SceneNativeRenderer: View {
-    let model: AppModel
+    @ObservedObject var model: AppModel
 
     var body: some View {
+        let scene = model.selectedScene
+
         ZStack {
             BundledSceneImage(
-                relativePath: model.selectedSceneImage.relativePath,
+                relativePath: scene.image.relativePath,
                 fitMode: .fitBlurred
             )
-            .accessibilityLabel(model.selectedSceneImage.accessibilityDescription)
+            .id(scene.id)
+            .accessibilityLabel(scene.image.accessibilityDescription)
             SceneLightingOverlay(presence: model.presence)
             SceneWeatherOverlay(
-                effect: model.selectedScene.weatherEffect,
+                effect: scene.weatherEffect,
                 isEnabled: model.weatherEffectsEnabled
             )
         }

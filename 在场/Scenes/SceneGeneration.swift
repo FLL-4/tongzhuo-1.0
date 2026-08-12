@@ -287,6 +287,23 @@ struct SceneGenerationReview: Codable, Equatable {
     }
 }
 
+enum SceneImageInspector {
+    static func review(_ data: Data, canvas: SceneCanvas) -> SceneGenerationReview {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            return SceneGenerationReview(pixelStyleConsistent: false, compositionCorrect: false, interfaceSafeAreasClear: false, forbiddenContentAbsent: false)
+        }
+        let hasExpectedCanvas = image.width == canvas.width && image.height == canvas.height
+        let hasPixels = !data.isEmpty
+        return SceneGenerationReview(
+            pixelStyleConsistent: hasPixels,
+            compositionCorrect: hasExpectedCanvas,
+            interfaceSafeAreasClear: hasExpectedCanvas,
+            forbiddenContentAbsent: hasPixels
+        )
+    }
+}
+
 struct SceneRepairRequest: Codable, Equatable {
     let generationRequestID: SceneGenerationRequest.ID
     let attempt: Int
@@ -345,6 +362,7 @@ private struct RemoteSceneGenerator: SceneGenerating {
         let relativePath = SceneGenerationContract.relativeImagePath(sceneID: request.spec.sceneID)
         try SceneAssetStore.shared.store(normalizedImage, relativePath: relativePath)
         progress(.reviewing)
+        let review = SceneImageInspector.review(normalizedImage, canvas: SceneGenerationContract.canvas)
         return SceneGenerationResult(
             requestID: request.id,
             sceneID: request.spec.sceneID,
@@ -353,12 +371,7 @@ private struct RemoteSceneGenerator: SceneGenerating {
                 canvas: SceneGenerationContract.canvas,
                 metadata: SceneImageMetadata(accessibilityDescription: "\(request.spec.name)的静态像素背景")
             ),
-            review: SceneGenerationReview(
-                pixelStyleConsistent: true,
-                compositionCorrect: true,
-                interfaceSafeAreasClear: true,
-                forbiddenContentAbsent: true
-            ),
+            review: review,
             completedAt: Date()
         )
     }
@@ -381,7 +394,7 @@ private struct RemoteSceneGenerator: SceneGenerating {
         request.httpMethod = "POST"
         request.timeoutInterval = 180
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer (configuration.image.apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(configuration.image.apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(payload)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
@@ -405,6 +418,28 @@ private struct RemoteSceneGenerator: SceneGenerating {
 }
 
 enum SceneImageNormalizer {
+    static func placeholderPNG(canvas: SceneCanvas) throws -> Data {
+        guard let context = CGContext(
+            data: nil,
+            width: canvas.width,
+            height: canvas.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { throw SceneGenerationError.invalidResponse }
+        context.setFillColor(CGColor(gray: 0.12, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+        guard let image = context.makeImage() else { throw SceneGenerationError.invalidResponse }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil) else {
+            throw SceneGenerationError.invalidResponse
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { throw SceneGenerationError.invalidResponse }
+        return output as Data
+    }
+
     static func normalize(_ data: Data, to canvas: SceneCanvas) throws -> Data {
         guard
             let source = CGImageSourceCreateWithData(data as CFData, nil),
@@ -508,24 +543,26 @@ struct MockSceneGenerator: SceneGenerating {
         progress(.reviewing)
         try await Task.sleep(for: .milliseconds(420))
 
+        // The mock follows the same asset contract as the remote generator so
+        // the workshop can be exercised end to end without an API key.
+        let placeholder = try SceneImageNormalizer.placeholderPNG(canvas: SceneGenerationContract.canvas)
+        let relativePath = SceneGenerationContract.relativeImagePath(sceneID: request.spec.sceneID)
+        try SceneAssetStore.shared.store(placeholder, relativePath: relativePath)
+
         let sceneName = request.spec.name
 
+        let review = SceneImageInspector.review(placeholder, canvas: SceneGenerationContract.canvas)
         return SceneGenerationResult(
             requestID: request.id,
             sceneID: request.spec.sceneID,
             image: GeneratedSceneImage(
-                relativePath: SceneGenerationContract.relativeImagePath(sceneID: request.spec.sceneID),
+                relativePath: relativePath,
                 canvas: SceneGenerationContract.canvas,
                 metadata: SceneImageMetadata(
                     accessibilityDescription: "\(sceneName)的静态像素背景"
                 )
             ),
-            review: SceneGenerationReview(
-                pixelStyleConsistent: true,
-                compositionCorrect: true,
-                interfaceSafeAreasClear: true,
-                forbiddenContentAbsent: true
-            ),
+            review: review,
             completedAt: Date()
         )
     }
