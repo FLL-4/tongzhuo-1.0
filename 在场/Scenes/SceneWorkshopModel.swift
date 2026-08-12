@@ -78,7 +78,7 @@ struct MockSceneSpecDrafter: SceneSpecDrafting {
             lighting: "壁炉和桌面台灯",
             keyObjects: ["笔记本", "热饮", "针织外套"],
             ambientPreset: .fireplace,
-            effectPreset: .steam
+            effectPreset: .none
         )
     }
 }
@@ -90,7 +90,6 @@ final class SceneWorkshopModel: ObservableObject {
     @Published var spec: GeneratedSceneSpec?
     @Published var keyObjectsText = ""
     @Published private(set) var job: SceneGenerationJob?
-    @Published var previewOccupancy: SceneOccupancy = .together
     @Published var errorMessage: String?
 
     private let drafter: any SceneSpecDrafting
@@ -110,7 +109,7 @@ final class SceneWorkshopModel: ObservableObject {
     }
 
     convenience init() {
-        self.init(drafter: MockSceneSpecDrafter(), generator: MockSceneGenerator())
+        self.init(drafter: MockSceneSpecDrafter(), generator: HybridSceneGenerator())
     }
 
     deinit {
@@ -130,8 +129,7 @@ final class SceneWorkshopModel: ObservableObject {
         guard let state = job?.state else { return "准备场景" }
         return switch state {
         case .queued: "整理场景描述"
-        case .generating(.together): "绘制同桌场景"
-        case .generating(.solo): "绘制独处场景"
+        case .generating: "绘制场景背景"
         case .reviewing: "检查构图与安全区域"
         case .repairing: "修正没有通过的细节"
         case .ready: "场景已经准备好"
@@ -166,7 +164,6 @@ final class SceneWorkshopModel: ObservableObject {
 
         generationTask?.cancel()
         errorMessage = nil
-        previewOccupancy = .together
         job = SceneGenerationJob(request: request, state: .queued)
         step = .generating
 
@@ -217,19 +214,12 @@ final class SceneWorkshopModel: ObservableObject {
             name: spec.name,
             eyebrow: "\(spec.timeOfDay.displayName) · \(spec.weather)",
             headline: "在\(spec.name)慢慢待一会儿",
-            images: SceneImageSet(
-                together: SceneImageAsset(
-                    relativePath: result.images.together.relativePath,
-                    metadata: result.images.together.metadata
-                ),
-                solo: SceneImageAsset(
-                    relativePath: result.images.solo.relativePath,
-                    metadata: result.images.solo.metadata
-                )
+            image: SceneImageAsset(
+                relativePath: result.image.relativePath,
+                metadata: result.image.metadata
             ),
             ambientPreset: spec.ambientPreset,
             weatherEffect: spec.effectPreset.weatherEffect,
-            atmosphericEffect: spec.effectPreset.atmosphericEffect,
             promptVersion: spec.promptVersion
         )
     }

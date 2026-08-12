@@ -9,13 +9,21 @@ enum SceneStageLayout: Equatable {
 
 struct SceneStageView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject var deskPet: DeskPetController
     let layout: SceneStageLayout
     var bottomInset: CGFloat = 0
     @State private var partnerPopoverPresented = false
 
+    init(model: AppModel, layout: SceneStageLayout, bottomInset: CGFloat = 0) {
+        self.model = model
+        self.deskPet = model.deskPet
+        self.layout = layout
+        self.bottomInset = bottomInset
+    }
+
     var body: some View {
         ZStack {
-            SceneWebView(state: SceneRenderState(model: model))
+            SceneNativeRenderer(model: model, layout: layout)
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(model.selectedScene.eyebrow)
@@ -115,6 +123,14 @@ struct SceneStageView: View {
                     .padding(.trailing, layout == .compact ? 14 : 28)
                     .padding(.bottom, 86 + bottomInset)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            if let profile = deskPet.activeProfile {
+                DeskPetOverlay(profile: profile)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, layout == .compact ? 14 : 22)
+                    .padding(.bottom, 84 + bottomInset)
+                    .transition(.scale.combined(with: .opacity))
             }
 
             SceneControlsView(model: model, layout: layout)

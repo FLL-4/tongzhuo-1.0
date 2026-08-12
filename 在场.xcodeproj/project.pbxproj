@@ -32,9 +32,6 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7BAE754F3029CC7E00DF6CD4 /* 在场 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			explicitFolders = (
-				WebApp,
-			);
 			path = "在场";
 			sourceTree = "<group>";
 		};

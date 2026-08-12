@@ -178,6 +178,8 @@ struct DeskSheet: View {
             .overlay(alignment: .top) { Divider().overlay(Palette.line) }
             .overlay(alignment: .bottom) { Divider().overlay(Palette.line) }
 
+            DeskPetSection(controller: model.deskPet, partner: room.partner)
+
             Button {
                 leaveConfirmationPresented = true
             } label: {

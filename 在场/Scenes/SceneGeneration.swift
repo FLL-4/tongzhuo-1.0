@@ -1,4 +1,7 @@
 import Foundation
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 
 enum SceneImageFormat: String, Codable, Equatable {
     case png
@@ -11,14 +14,13 @@ struct SceneCanvas: Codable, Equatable {
 }
 
 enum SceneGenerationContract {
-    static let currentPromptVersion = 1
+    static let currentPromptVersion = 2
     static let maximumAutomaticRepairAttempts = 1
     static let canvas = SceneCanvas(width: 1_920, height: 1_080, format: .png)
-    static let assetRootDirectory = "assets/scenes"
-    static let requiredOccupancies = SceneOccupancy.allCases
+    static let assetRootDirectory = "Scenes"
 
-    static func relativeImagePath(sceneID: RoomScene.ID, occupancy: SceneOccupancy) -> String {
-        "\(assetRootDirectory)/\(sceneID)/\(occupancy.rawValue).\(canvas.format.rawValue)"
+    static func relativeImagePath(sceneID: RoomScene.ID) -> String {
+        "\(assetRootDirectory)/\(sceneID).\(canvas.format.rawValue)"
     }
 
     static func isValidSceneID(_ sceneID: String) -> Bool {
@@ -89,21 +91,15 @@ enum SceneMood: String, Codable, CaseIterable, Equatable, Hashable {
 enum SceneEffectPreset: String, Codable, CaseIterable, Equatable, Hashable {
     case none
     case rain
-    case steam
 
     var weatherEffect: SceneWeatherEffect {
         self == .rain ? .rain : .none
-    }
-
-    var atmosphericEffect: SceneAtmosphericEffect {
-        self == .steam ? .steam : .none
     }
 
     var displayName: String {
         switch self {
         case .none: "无"
         case .rain: "雨"
-        case .steam: "蒸汽"
         }
     }
 }
@@ -180,35 +176,20 @@ enum SceneSpecValidationError: Error, Equatable {
 }
 
 struct SceneGenerationPrompt: Codable, Equatable {
-    let occupancy: SceneOccupancy
     let promptVersion: Int
     let text: String
 }
 
 struct SceneStyleReference: Codable, Equatable {
     let sceneID: RoomScene.ID
-    let togetherImagePath: String
-    let soloImagePath: String
+    let imagePath: String
 
     static var builtIn: [SceneStyleReference] {
         RoomSceneCatalog.builtIn.map { scene in
             SceneStyleReference(
                 sceneID: scene.id,
-                togetherImagePath: scene.image(for: .together).relativePath,
-                soloImagePath: scene.image(for: .solo).relativePath
+                imagePath: scene.image.relativePath
             )
-        }
-    }
-}
-
-struct SceneGenerationPrompts: Codable, Equatable {
-    let together: SceneGenerationPrompt
-    let solo: SceneGenerationPrompt
-
-    func prompt(for occupancy: SceneOccupancy) -> SceneGenerationPrompt {
-        switch occupancy {
-        case .together: together
-        case .solo: solo
         }
     }
 }
@@ -216,7 +197,7 @@ struct SceneGenerationPrompts: Codable, Equatable {
 struct SceneGenerationRequest: Codable, Equatable, Identifiable {
     let id: UUID
     let spec: GeneratedSceneSpec
-    let prompts: SceneGenerationPrompts
+    let prompt: SceneGenerationPrompt
     let styleReferences: [SceneStyleReference]
 
     init(
@@ -227,7 +208,7 @@ struct SceneGenerationRequest: Codable, Equatable, Identifiable {
         try spec.validate()
         self.id = id
         self.spec = spec
-        prompts = ScenePromptCompiler.compile(spec)
+        prompt = ScenePromptCompiler.compile(spec)
         self.styleReferences = styleReferences
     }
 
@@ -238,7 +219,7 @@ struct SceneGenerationRequest: Codable, Equatable, Identifiable {
 
 enum SceneReviewIssue: String, Codable, Equatable {
     case pixelStyleMismatch
-    case occupancyMismatch
+    case compositionMismatch
     case interfaceSafeAreaConflict
     case forbiddenContentDetected
 
@@ -246,8 +227,8 @@ enum SceneReviewIssue: String, Codable, Equatable {
         switch self {
         case .pixelStyleMismatch:
             "Restore crisp pixel clusters, limited palette and consistent pixel density."
-        case .occupancyMismatch:
-            "Correct the number of people and workstations for the requested occupancy variant."
+        case .compositionMismatch:
+            "Remove all people, characters and UI while preserving the required interface-safe composition."
         case .interfaceSafeAreaConflict:
             "Move faces and essential objects away from the reserved top and bottom interface areas."
         case .forbiddenContentDetected:
@@ -258,7 +239,7 @@ enum SceneReviewIssue: String, Codable, Equatable {
 
 enum SceneGenerationState: Codable, Equatable {
     case queued
-    case generating(SceneOccupancy)
+    case generating
     case reviewing
     case repairing(attempt: Int, issues: [SceneReviewIssue])
     case ready(SceneGenerationResult)
@@ -271,39 +252,27 @@ struct GeneratedSceneImage: Codable, Equatable {
     let metadata: SceneImageMetadata
 }
 
-struct GeneratedSceneImages: Codable, Equatable {
-    let together: GeneratedSceneImage
-    let solo: GeneratedSceneImage
-
-    func image(for occupancy: SceneOccupancy) -> GeneratedSceneImage {
-        switch occupancy {
-        case .together: together
-        case .solo: solo
-        }
-    }
-}
-
 struct SceneGenerationResult: Codable, Equatable {
     let requestID: SceneGenerationRequest.ID
     let sceneID: RoomScene.ID
-    let images: GeneratedSceneImages
+    let image: GeneratedSceneImage
     let review: SceneGenerationReview
     let completedAt: Date
 
-    func targetRelativePath(for occupancy: SceneOccupancy) -> String {
-        SceneGenerationContract.relativeImagePath(sceneID: sceneID, occupancy: occupancy)
+    var targetRelativePath: String {
+        SceneGenerationContract.relativeImagePath(sceneID: sceneID)
     }
 }
 
 struct SceneGenerationReview: Codable, Equatable {
     let pixelStyleConsistent: Bool
-    let occupancyCorrect: Bool
+    let compositionCorrect: Bool
     let interfaceSafeAreasClear: Bool
     let forbiddenContentAbsent: Bool
 
     var isApproved: Bool {
         pixelStyleConsistent
-            && occupancyCorrect
+            && compositionCorrect
             && interfaceSafeAreasClear
             && forbiddenContentAbsent
     }
@@ -311,7 +280,7 @@ struct SceneGenerationReview: Codable, Equatable {
     var issues: [SceneReviewIssue] {
         var issues: [SceneReviewIssue] = []
         if !pixelStyleConsistent { issues.append(.pixelStyleMismatch) }
-        if !occupancyCorrect { issues.append(.occupancyMismatch) }
+        if !compositionCorrect { issues.append(.compositionMismatch) }
         if !interfaceSafeAreasClear { issues.append(.interfaceSafeAreaConflict) }
         if !forbiddenContentAbsent { issues.append(.forbiddenContentDetected) }
         return issues
@@ -320,7 +289,6 @@ struct SceneGenerationReview: Codable, Equatable {
 
 struct SceneRepairRequest: Codable, Equatable {
     let generationRequestID: SceneGenerationRequest.ID
-    let occupancy: SceneOccupancy
     let attempt: Int
     let prompt: String
     let issues: [SceneReviewIssue]
@@ -340,47 +308,54 @@ protocol SceneGenerating {
     ) async throws -> SceneGenerationResult
 }
 
-struct MockSceneGenerator: SceneGenerating {
+struct HybridSceneGenerator: SceneGenerating {
+    private let configuration: APIConfiguration
+    private let mock = MockSceneGenerator()
+
+    init(configuration: APIConfiguration = .load()) {
+        self.configuration = configuration
+    }
+
     func generate(
         _ request: SceneGenerationRequest,
         progress: @escaping (SceneGenerationState) -> Void
     ) async throws -> SceneGenerationResult {
-        progress(.generating(.together))
-        try await Task.sleep(for: .milliseconds(520))
-        progress(.generating(.solo))
-        try await Task.sleep(for: .milliseconds(520))
+        guard configuration.isImageModelConfigured,
+              configuration.image.provider == .dashScope else {
+            return try await mock.generate(request, progress: progress)
+        }
+        return try await RemoteSceneGenerator(configuration: configuration)
+            .generate(request, progress: progress)
+    }
+}
+
+private struct RemoteSceneGenerator: SceneGenerating {
+    let configuration: APIConfiguration
+
+    func generate(
+        _ request: SceneGenerationRequest,
+        progress: @escaping (SceneGenerationState) -> Void
+    ) async throws -> SceneGenerationResult {
+        progress(.generating)
+        let imageData = try await generateImage(prompt: request.prompt.text)
+        let normalizedImage = try SceneImageNormalizer.normalize(
+            imageData,
+            to: SceneGenerationContract.canvas
+        )
+        let relativePath = SceneGenerationContract.relativeImagePath(sceneID: request.spec.sceneID)
+        try SceneAssetStore.shared.store(normalizedImage, relativePath: relativePath)
         progress(.reviewing)
-        try await Task.sleep(for: .milliseconds(420))
-
-        let template = templateScene(for: request.spec)
-        let togetherTemplate = template.image(for: .together)
-        let soloTemplate = template.image(for: .solo)
-        let sceneName = request.spec.name
-
         return SceneGenerationResult(
             requestID: request.id,
             sceneID: request.spec.sceneID,
-            images: GeneratedSceneImages(
-                together: GeneratedSceneImage(
-                    relativePath: togetherTemplate.relativePath,
-                    canvas: SceneGenerationContract.canvas,
-                    metadata: SceneImageMetadata(
-                        accessibilityDescription: "两个人在\(sceneName)安静同桌",
-                        steamAnchors: togetherTemplate.steamAnchors
-                    )
-                ),
-                solo: GeneratedSceneImage(
-                    relativePath: soloTemplate.relativePath,
-                    canvas: SceneGenerationContract.canvas,
-                    metadata: SceneImageMetadata(
-                        accessibilityDescription: "一个人在\(sceneName)安静专注",
-                        steamAnchors: soloTemplate.steamAnchors
-                    )
-                )
+            image: GeneratedSceneImage(
+                relativePath: relativePath,
+                canvas: SceneGenerationContract.canvas,
+                metadata: SceneImageMetadata(accessibilityDescription: "(request.spec.name)的静态像素背景")
             ),
             review: SceneGenerationReview(
                 pixelStyleConsistent: true,
-                occupancyCorrect: true,
+                compositionCorrect: true,
                 interfaceSafeAreasClear: true,
                 forbiddenContentAbsent: true
             ),
@@ -388,32 +363,182 @@ struct MockSceneGenerator: SceneGenerating {
         )
     }
 
-    private func templateScene(for spec: GeneratedSceneSpec) -> RoomScene {
-        if spec.effectPreset == .rain || spec.ambientPreset == .rain {
-            return RoomSceneCatalog.rainyStudy
+    private func generateImage(prompt: String) async throws -> Data {
+        guard let url = URL(string: configuration.image.endpoint), url.scheme == "https" else {
+            throw SceneGenerationError.invalidEndpoint
         }
-        if spec.effectPreset == .steam
-            || spec.ambientPreset == .fireplace
-            || spec.timeOfDay == .lateNight
-            || spec.weather.contains("雪")
-        {
-            return RoomSceneCatalog.midnightCabin
+        let payload = SceneImageRequest(
+            model: configuration.image.sceneModel,
+            input: .init(messages: [.init(role: "user", content: [.text(prompt)])]),
+            parameters: .init(
+                count: 1,
+                watermark: false,
+                promptExtend: false,
+                size: configuration.image.sceneSize.replacingOccurrences(of: "x", with: "*")
+            )
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 180
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer (configuration.image.apiKey)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(payload)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw SceneGenerationError.remote(String(data: data, encoding: .utf8) ?? "图像接口请求失败")
         }
-        return RoomSceneCatalog.lakesideDesk
+        guard
+            let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let output = object["output"] as? [String: Any],
+            let choices = output["choices"] as? [[String: Any]],
+            let message = choices.first?["message"] as? [String: Any],
+            let content = message["content"] as? [[String: Any]],
+            let imageString = content.first?["image"] as? String,
+            let imageURL = URL(string: imageString)
+        else { throw SceneGenerationError.invalidResponse }
+        let (imageData, imageResponse) = try await URLSession.shared.data(from: imageURL)
+        guard let imageHTTP = imageResponse as? HTTPURLResponse, (200..<300).contains(imageHTTP.statusCode) else {
+            throw SceneGenerationError.invalidResponse
+        }
+        return imageData
     }
 }
 
-enum ScenePromptCompiler {
-    static func compile(_ spec: GeneratedSceneSpec) -> SceneGenerationPrompts {
-        SceneGenerationPrompts(
-            together: prompt(for: spec, occupancy: .together),
-            solo: prompt(for: spec, occupancy: .solo)
+enum SceneImageNormalizer {
+    static func normalize(_ data: Data, to canvas: SceneCanvas) throws -> Data {
+        guard
+            let source = CGImageSourceCreateWithData(data as CFData, nil),
+            let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else { throw SceneGenerationError.invalidResponse }
+
+        let sourceWidth = CGFloat(image.width)
+        let sourceHeight = CGFloat(image.height)
+        let targetAspect = CGFloat(canvas.width) / CGFloat(canvas.height)
+        let sourceAspect = sourceWidth / sourceHeight
+        let cropRect: CGRect
+        if sourceAspect > targetAspect {
+            let width = sourceHeight * targetAspect
+            cropRect = CGRect(x: (sourceWidth - width) / 2, y: 0, width: width, height: sourceHeight)
+        } else {
+            let height = sourceWidth / targetAspect
+            cropRect = CGRect(x: 0, y: (sourceHeight - height) / 2, width: sourceWidth, height: height)
+        }
+
+        guard
+            let cropped = image.cropping(to: cropRect.integral),
+            let context = CGContext(
+                data: nil,
+                width: canvas.width,
+                height: canvas.height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        else { throw SceneGenerationError.invalidResponse }
+
+        context.interpolationQuality = .high
+        context.draw(cropped, in: CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height))
+        guard let normalized = context.makeImage() else { throw SceneGenerationError.invalidResponse }
+
+        let output = NSMutableData()
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                output,
+                UTType.png.identifier as CFString,
+                1,
+                nil
+            )
+        else { throw SceneGenerationError.invalidResponse }
+        CGImageDestinationAddImage(destination, normalized, nil)
+        guard CGImageDestinationFinalize(destination) else { throw SceneGenerationError.invalidResponse }
+        return output as Data
+    }
+}
+
+private struct SceneImageRequest: Encodable {
+    struct Input: Encodable { let messages: [Message] }
+    struct Message: Encodable { let role: String; let content: [Content] }
+    enum Content: Encodable {
+        case text(String)
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            if case let .text(value) = self { try container.encode(value, forKey: .text) }
+        }
+        enum CodingKeys: String, CodingKey { case text }
+    }
+    struct Parameters: Encodable {
+        let count: Int
+        let watermark: Bool
+        let promptExtend: Bool
+        let size: String
+        enum CodingKeys: String, CodingKey {
+            case count = "n"
+            case watermark
+            case promptExtend = "prompt_extend"
+            case size
+        }
+    }
+    let model: String
+    let input: Input
+    let parameters: Parameters
+}
+
+enum SceneGenerationError: LocalizedError {
+    case invalidEndpoint
+    case invalidResponse
+    case remote(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidEndpoint: "场景图像接口地址无效。"
+        case .invalidResponse: "场景图像接口没有返回可用图片。"
+        case .remote(let message): "场景图像接口请求失败：(message.prefix(180))"
+        }
+    }
+}
+
+struct MockSceneGenerator: SceneGenerating {
+    func generate(
+        _ request: SceneGenerationRequest,
+        progress: @escaping (SceneGenerationState) -> Void
+    ) async throws -> SceneGenerationResult {
+        progress(.generating)
+        try await Task.sleep(for: .milliseconds(700))
+        progress(.reviewing)
+        try await Task.sleep(for: .milliseconds(420))
+
+        let sceneName = request.spec.name
+
+        return SceneGenerationResult(
+            requestID: request.id,
+            sceneID: request.spec.sceneID,
+            image: GeneratedSceneImage(
+                relativePath: SceneGenerationContract.relativeImagePath(sceneID: request.spec.sceneID),
+                canvas: SceneGenerationContract.canvas,
+                metadata: SceneImageMetadata(
+                    accessibilityDescription: "\(sceneName)的静态像素背景"
+                )
+            ),
+            review: SceneGenerationReview(
+                pixelStyleConsistent: true,
+                compositionCorrect: true,
+                interfaceSafeAreasClear: true,
+                forbiddenContentAbsent: true
+            ),
+            completedAt: Date()
         )
+    }
+
+}
+
+enum ScenePromptCompiler {
+    static func compile(_ spec: GeneratedSceneSpec) -> SceneGenerationPrompt {
+        prompt(for: spec)
     }
 
     static func compileRepairRequest(
         for request: SceneGenerationRequest,
-        occupancy: SceneOccupancy,
         review: SceneGenerationReview,
         attempt: Int
     ) -> SceneRepairRequest? {
@@ -427,10 +552,9 @@ enum ScenePromptCompiler {
         let instructions = issues
             .map { "- \($0.repairInstruction)" }
             .joined(separator: "\n")
-        let originalPrompt = request.prompts.prompt(for: occupancy).text
+        let originalPrompt = request.prompt.text
         return SceneRepairRequest(
             generationRequestID: request.id,
-            occupancy: occupancy,
             attempt: attempt,
             prompt: """
             \(originalPrompt)
@@ -443,34 +567,12 @@ enum ScenePromptCompiler {
         )
     }
 
-    private static func prompt(
-        for spec: GeneratedSceneSpec,
-        occupancy: SceneOccupancy
-    ) -> SceneGenerationPrompt {
-        let compositionRules: String
-        switch occupancy {
-        case .together:
-            compositionRules = """
-            OCCUPANCY VARIANT: TOGETHER
-            - Show exactly two people quietly sharing the room.
-            - Include two visually balanced work positions with equal importance.
-            - Keep both people naturally integrated into the environment.
-            """
-        case .solo:
-            compositionRules = """
-            OCCUPANCY VARIANT: SOLO
-            - Show exactly one person, using the left-side person from the together composition.
-            - Remove the right-side person and their desk or workstation completely.
-            - Do not leave an empty second desk, empty chair or obvious gap where they used to be.
-            - Recompose furniture and room details as needed so the single-person scene feels complete.
-            """
-        }
-
+    private static func prompt(for spec: GeneratedSceneSpec) -> SceneGenerationPrompt {
         let keyObjects = spec.keyObjects.isEmpty
             ? "none required"
             : spec.keyObjects.map { promptValue($0) }.joined(separator: ", ")
         let text = """
-        Create a production-ready \(SceneGenerationContract.canvas.width)x\(SceneGenerationContract.canvas.height) pixel-art background for the app "Zaichang", a quiet shared-presence space for close people.
+        Create one standalone, full-bleed 16:9 environment background image. The output must be only the illustrated place itself, suitable for adding characters and application controls later in separate layers.
 
         STYLE LOCK
         - Warm handcrafted low-resolution pixel art with an original visual identity.
@@ -485,13 +587,14 @@ enum ScenePromptCompiler {
         - Fixed wide camera, eye-level three-quarter side view.
         - Show the entire room as one coherent environment.
         - Avoid close-ups and dramatic cinematic perspective.
-        - Keep the top-left 28% by 18% visually calm and relatively dark for scene text.
-        - Keep the top-right 24% by 16% clear for presence information.
-        - Keep the bottom 18% free of faces and essential objects for app controls.
+        - Keep the upper corners visually calm and the lowest 18% free of essential objects.
         - Place the main room activity around the middle third of the frame.
-        - Do not render a computer window, frame, border or application UI.
+        - Do not render a computer window, application chrome, panel, sidebar, toolbar, frame, border or application UI.
 
-        \(compositionRules)
+        STATIC BACKGROUND RULES
+        - Render only the room, landscape and environmental objects.
+        - Do not render people, characters, desk pets, avatars, chairs prepared for a person, or empty duplicate workstations.
+        - Leave the foreground visually usable for SwiftUI character layers.
 
         SCENE VARIABLES
         Scene name: \(promptValue(spec.name))
@@ -512,25 +615,24 @@ enum ScenePromptCompiler {
         DYNAMIC EFFECT RULES
         Effect preset: \(spec.effectPreset.rawValue)
         - Weather may be visible through windows.
-        - Do not paint full-screen rain, steam or animated particles into the image.
-        - Leave rain and steam overlays to the application.
+        - Do not paint full-screen rain or animated particles into the image.
+        - Leave weather effects to the application overlay.
 
         FORBIDDEN CONTENT
         - No text, letters, numbers, logos, watermarks or signatures.
-        - No UI controls, speech bubbles, icons or decorative borders.
+        - No UI controls, menus, panels, sidebars, toolbars, speech bubbles, icons or decorative borders.
         - No excessive bloom, lens flare, smooth gradients or depth-of-field blur.
         - No malformed furniture, duplicated limbs or inconsistent pixel scale.
         - Do not imitate any named game, artist or copyrighted character.
 
         OUTPUT
-        - One complete 16:9 PNG scene at exactly \(SceneGenerationContract.canvas.width)x\(SceneGenerationContract.canvas.height).
+        - One complete full-bleed 16:9 PNG background with no interface surrounding it.
         - Consistent pixel density across the entire image.
         - Clear silhouettes and readable lighting at thumbnail size.
         - Suitable for center-crop on different macOS, iOS and iPadOS window sizes.
         """
 
         return SceneGenerationPrompt(
-            occupancy: occupancy,
             promptVersion: spec.promptVersion,
             text: text
         )

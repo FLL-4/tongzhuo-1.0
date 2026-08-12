@@ -156,6 +156,7 @@ final class AppModel: ObservableObject {
     ]
 
     let voiceRecorder: VoiceRecorderController
+    let deskPet: DeskPetController
     let sceneGenerator: any SceneGenerating
 
     private let ambientAudio: AmbientAudioControlling
@@ -167,11 +168,13 @@ final class AppModel: ObservableObject {
 
     init(
         ambientAudio: AmbientAudioControlling? = nil,
-        sceneGenerator: (any SceneGenerating)? = nil
+        sceneGenerator: (any SceneGenerating)? = nil,
+        deskPetGenerator: (any DeskPetGenerating)? = nil
     ) {
         let audio = ambientAudio ?? AmbientAudioEngine()
         self.ambientAudio = audio
-        self.sceneGenerator = sceneGenerator ?? MockSceneGenerator()
+        self.sceneGenerator = sceneGenerator ?? HybridSceneGenerator()
+        deskPet = DeskPetController(generator: deskPetGenerator ?? HybridDeskPetGenerator())
         voiceRecorder = VoiceRecorderController(ambientAudio: audio)
         timerEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
         timerTask = Task { @MainActor [weak self] in
@@ -201,14 +204,12 @@ final class AppModel: ObservableObject {
 
     var currentDeskPartner: DeskPartner? { currentDeskRoom?.partner }
     var deskActionTitle: String { currentDeskRoom == nil ? "加入同桌" : "邀请同桌" }
-    var sceneOccupancy: SceneOccupancy { currentDeskPartner == nil ? .solo : .together }
-
     var selectedScene: RoomScene {
         scenes.first(where: { $0.id == selectedSceneID }) ?? RoomSceneCatalog.rainyStudy
     }
 
     var selectedSceneImage: SceneImageAsset {
-        selectedScene.image(for: sceneOccupancy)
+        selectedScene.image
     }
 
     func selectScene(_ scene: RoomScene) {
@@ -413,6 +414,8 @@ final class AppModel: ObservableObject {
         deskSession = .connected(room)
         if partner != nil {
             clearDeskDependentSuggestion()
+        } else {
+            deskPet.clear()
         }
     }
 
@@ -432,6 +435,7 @@ final class AppModel: ObservableObject {
     func leaveDesk() {
         deskJoinTask?.cancel()
         deskSession = .disconnected
+        deskPet.clear()
         deskErrorMessage = nil
         clearDeskDependentSuggestion()
         showToast("已经离开同桌房间")

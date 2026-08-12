@@ -140,14 +140,9 @@ struct SceneWorkshopSheet: View {
             }
             VStack(spacing: 12) {
                 GenerationStageRow(
-                    title: "同桌画面",
-                    symbol: "person.2",
-                    status: stageStatus(for: .together)
-                )
-                GenerationStageRow(
-                    title: "独处画面",
-                    symbol: "person",
-                    status: stageStatus(for: .solo)
+                    title: "场景背景",
+                    symbol: "photo",
+                    status: generationStageStatus
                 )
                 GenerationStageRow(
                     title: "构图审查",
@@ -165,20 +160,12 @@ struct SceneWorkshopSheet: View {
     private var previewStep: some View {
         if let result = workshop.result, let spec = workshop.spec {
             VStack(alignment: .leading, spacing: 18) {
-                Picker("画面", selection: $workshop.previewOccupancy) {
-                    Text("同桌").tag(SceneOccupancy.together)
-                    Text("独处").tag(SceneOccupancy.solo)
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 280)
-
-                let generatedImage = result.images.image(for: workshop.previewOccupancy)
-                BundledSceneImage(relativePath: generatedImage.relativePath)
+                BundledSceneImage(relativePath: result.image.relativePath)
                     .aspectRatio(16 / 9, contentMode: .fill)
                     .frame(maxWidth: .infinity)
                     .clipped()
                     .overlay(alignment: .topTrailing) {
-                        Text(workshop.previewOccupancy == .together ? "双人场景" : "独处场景")
+                        Text("静态背景")
                             .font(.system(size: 10, weight: .semibold))
                             .padding(.horizontal, 9)
                             .padding(.vertical, 6)
@@ -293,19 +280,17 @@ struct SceneWorkshopSheet: View {
         case .describe: "描述一个地方"
         case .configure: "确认场景细节"
         case .generating: "正在点亮房间"
-        case .preview: "看看两个状态"
+        case .preview: "查看场景预览"
         }
     }
 
-    private func stageStatus(for occupancy: SceneOccupancy) -> GenerationStageStatus {
+    private var generationStageStatus: GenerationStageStatus {
         guard let state = workshop.job?.state else { return .waiting }
         switch state {
         case .queued:
             return .waiting
-        case let .generating(current):
-            if current == occupancy { return .active }
-            if current == .solo, occupancy == .together { return .complete }
-            return .waiting
+        case .generating:
+            return .active
         case .reviewing, .repairing, .ready:
             return .complete
         case .failed:
@@ -547,7 +532,7 @@ private struct ReviewSummary: View {
     var body: some View {
         HStack(spacing: 10) {
             ReviewCheck(title: "像素", passed: review.pixelStyleConsistent)
-            ReviewCheck(title: "构图", passed: review.occupancyCorrect)
+            ReviewCheck(title: "构图", passed: review.compositionCorrect)
             ReviewCheck(title: "安全区", passed: review.interfaceSafeAreasClear)
         }
     }

@@ -28,7 +28,7 @@ struct ScenePickerSheet: View {
                             isSelected: model.selectedSceneID == scene.id
                         ) {
                             BundledSceneImage(
-                                relativePath: scene.image(for: model.sceneOccupancy).relativePath
+                                relativePath: scene.image.relativePath
                             )
                         }
                     }

@@ -1,4 +1,17 @@
+# macOS metadata and Finder temporary files
 .DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon
+
+# Xcode derived and per-user state
 DerivedData/
 *.xcuserstate
 xcuserdata/
+# Local AI credentials. Keep only Config/api.example.yaml in the repository.
+.secrets/
+在场/Config/api.yaml
+api.yaml
