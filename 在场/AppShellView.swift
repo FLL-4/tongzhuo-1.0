@@ -40,16 +40,20 @@ struct AppShellView: View {
     }
 
     private var desktopShell: some View {
-        ZStack(alignment: .bottom) {
+        return ZStack(alignment: .bottom) {
             HStack(spacing: 0) {
                 SidebarView(model: model)
                 Divider().overlay(Palette.line)
-                SceneStageView(model: model, layout: .expanded)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                GeometryReader { _ in
+                    SceneStageView(model: model, layout: .expanded)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .frame(minWidth: 0)
                 Divider().overlay(Palette.line)
                 ContextPanelView(model: model, recorder: model.voiceRecorder)
                     .frame(width: LayoutMetrics.contextPanelWidth)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if let toastMessage = model.toastMessage {
                 ToastView(message: toastMessage)
