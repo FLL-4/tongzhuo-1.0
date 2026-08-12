@@ -61,11 +61,13 @@ extension View {
     }
 
     func liquidSceneControl() -> some View {
-        glassEffect(.regular, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        background(Palette.surface2.opacity(0.94), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.16)))
     }
 
     func adaptiveGlassSurface(cornerRadius: CGFloat = 12) -> some View {
-        glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        background(Palette.surface2.opacity(0.94), in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).stroke(Color.white.opacity(0.16)))
     }
 
     func panelDivider() -> some View {
