@@ -6,30 +6,48 @@
 //
 
 import Foundation
+import ImageIO
 import Testing
 @testable import 在场
 
 @Suite("在场 AppModel")
 struct AppModelTests {
 
-    @Test("API YAML 支持全局图像配置")
-    func apiConfigurationParsesYAML() {
-        let configuration = APIConfiguration.from(yaml: """
-        provider: openai
-        api_key: 'secret'
-        base_url: https://example.com/v1
-        chat_model: gpt-4.1-mini
-        image_endpoint: https://example.com/v1/images/edits
-        image_model: gpt-image-1
-        image_size: 1024x1024
-        """)
+    @Test("记忆草稿生命周期与生成运行态彼此独立")
+    @MainActor
+    func memoryDraftLifecycleIsUnified() async throws {
+        let controller = MemoryController(imageGenerator: ImmediateMemoryImageGenerator())
 
-        #expect(configuration.provider == .openAI)
-        #expect(configuration.apiKey == "secret")
-        #expect(configuration.baseURL == "https://example.com/v1")
-        #expect(configuration.imageModel == "gpt-image-1")
-        #expect(configuration.isConfigured)
-        #expect(configuration.isTextModelConfigured)
+        controller.makeDraft(
+            title: "雨夜书桌",
+            mood: .quiet,
+            observation: "一起完成了一段专注",
+            keyMoment: "两盏灯同时亮着",
+            delivery: .archiveOnly
+        )
+
+        let draft = try #require(controller.drafts.first)
+        #expect(draft.reviewState == .draft)
+        #expect(controller.generationState == .idle)
+
+        controller.generateImage(for: draft)
+        #expect(controller.generationState == .generating)
+        #expect(controller.drafts.first?.reviewState == .draft)
+
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(controller.generationState == .idle)
+        #expect(controller.drafts.first?.reviewState == .ready)
+
+        let ready = try #require(controller.drafts.first)
+        controller.confirm(ready)
+        #expect(controller.cards.first?.reviewState == .confirmed)
+
+        let confirmed = try #require(controller.cards.first)
+        controller.archive(confirmed)
+        #expect(controller.cards.first?.reviewState == .archived)
+
+        controller.restore(try #require(controller.cards.first))
+        #expect(controller.cards.first?.reviewState == .confirmed)
     }
 
     @Test("文本、图像和抠图配置彼此独立")
@@ -71,12 +89,13 @@ struct AppModelTests {
         #expect(endpoint.absoluteString == "https://oneapi-comate.baidu-int.com/v1/chat/completions")
 
         let configuration = APIConfiguration.from(yaml: """
-        provider: openai
-        api_key: secret
-        base_url: https://oneapi-comate.baidu-int.com/v1
-        chat_model: DeepSeek-V4-Flash
+        text:
+          provider: openai
+          api_key: secret
+          base_url: https://oneapi-comate.baidu-int.com/v1
+          model: DeepSeek-V4-Flash
         """)
-        #expect(configuration.chatModel == "DeepSeek-V4-Flash")
+        #expect(configuration.text.model == "DeepSeek-V4-Flash")
         #expect(configuration.isTextModelConfigured)
     }
 
@@ -104,48 +123,52 @@ struct AppModelTests {
         #expect(controller.activeProfile == nil)
     }
 
-    @Test("场景状态会同步到原生渲染快照")
-    @MainActor
-    func sceneRenderStateTracksModel() {
-        let model = AppModel()
-        model.selectScene(RoomSceneCatalog.lakesideDesk)
-
-        let state = SceneRenderState(model: model)
-
-        #expect(state.sceneID == "lakeside-desk")
-        #expect(state.imagePath == "Scenes/lakeside-desk.png")
-        #expect(state.weatherEffect == .none)
-        #expect(state.weatherEffectsEnabled)
-        #expect(state.presence == .focus)
-    }
-
     @Test("同桌状态不会改变静态背景资源")
     @MainActor
     func deskOccupancySelectsSceneAsset() {
         let model = AppModel()
 
-        #expect(model.selectedSceneImage.relativePath == "Scenes/rainy-study.png")
+        #expect(model.selectedSceneImage.relativePath == "Scenes/focus.png")
 
         model.leaveDesk()
 
-        #expect(model.selectedSceneImage.relativePath == "Scenes/rainy-study.png")
-    }
-
-    @Test("深夜小屋仅保留静态背景与天气状态")
-    @MainActor
-    func midnightCabinUsesStaticAtmosphere() {
-        let model = AppModel()
-        model.selectScene(RoomSceneCatalog.midnightCabin)
-
-        let connectedState = SceneRenderState(model: model)
-        #expect(connectedState.imagePath == "Scenes/midnight-cabin.png")
-        #expect(connectedState.weatherEffect == .none)
+        #expect(model.selectedSceneImage.relativePath == "Scenes/focus.png")
+        model.selectScene(RoomSceneCatalog.roamScene)
+        #expect(model.selectedSceneImage.relativePath == "Scenes/roam.png")
+        #expect(model.selectedScene.weatherEffect == .none)
 
         model.updateDeskPartner(nil)
 
-        let disconnectedState = SceneRenderState(model: model)
-        #expect(disconnectedState.imagePath == "Scenes/midnight-cabin.png")
-        #expect(disconnectedState.weatherEffect == .none)
+        #expect(model.selectedSceneImage.relativePath == "Scenes/roam.png")
+        #expect(model.selectedScene.weatherEffect == .none)
+    }
+
+    @Test("切换场景会更新渲染所需的场景资源")
+    @MainActor
+    func selectingSceneUpdatesRendererInputs() {
+        let model = AppModel()
+        let initialID = model.selectedScene.id
+        let initialPath = model.selectedSceneImage.relativePath
+
+        model.selectScene(RoomSceneCatalog.makeScene)
+
+        #expect(initialID != model.selectedScene.id)
+        #expect(initialPath != model.selectedSceneImage.relativePath)
+        #expect(model.selectedScene.id == RoomSceneCatalog.makeScene.id)
+        #expect(model.selectedSceneImage.relativePath == "Scenes/make.png")
+    }
+
+    @Test("不支持天气的基础状态不会启用天气叠加层")
+    @MainActor
+    func unsupportedWeatherEffectStaysDisabled() {
+        let model = AppModel()
+
+        model.selectScene(RoomSceneCatalog.moveScene)
+        let previousValue = model.weatherEffectsEnabled
+        model.toggleWeather()
+
+        #expect(!model.supportsWeatherEffects)
+        #expect(model.weatherEffectsEnabled == previousValue)
     }
 
     @Test("非专注状态暂停计时，回到专注后继续")
@@ -233,12 +256,12 @@ struct AppModelTests {
         let model = AppModel(ambientAudio: audio)
 
         model.activateAudio()
-        model.selectScene(RoomSceneCatalog.midnightCabin)
+        model.selectScene(RoomSceneCatalog.roamScene)
         model.deactivateAudio()
 
         #expect(audio.commands == [
             .start(.rain, true),
-            .preset(.fireplace),
+            .preset(.forest),
             .stop,
         ])
     }
@@ -275,42 +298,52 @@ struct AppModelTests {
         ])
     }
 
-    @Test("同桌码会统一为四加四格式")
+    @Test("同桌邀请码只去除首尾空格且任意非空值有效")
     @MainActor
     func deskCodeFormatting() {
         let model = AppModel()
 
-        #expect(model.formatDeskCode("yuzu 2048") == "YUZU-2048")
-        #expect(model.isValidDeskCode("YUZU-2048"))
-        #expect(!model.isValidDeskCode("YUZU-20"))
+        #expect(model.formatDeskCode("  任意邀请码  ") == "任意邀请码")
+        #expect(model.isValidDeskCode("demo"))
+        #expect(!model.isValidDeskCode("   "))
     }
 
-    @Test("离开房间后切换为加入入口")
+    @Test("应用启动时未连接房间且计时未开始")
     @MainActor
-    func leavingDeskUpdatesProductState() {
+    func startsDisconnected() {
         let model = AppModel()
-        #expect(model.currentDeskPartner?.name == "阿禾")
-
-        model.leaveDesk()
 
         #expect(model.currentDeskRoom == nil)
         #expect(model.deskActionTitle == "加入同桌")
+        #expect(!model.timerRunning)
+        #expect(model.remainingSeconds == 25 * 60)
     }
 
-    @Test("创建房间后进入等待同桌状态")
+    @Test("创建房间后进入固定 Demo 房间")
     @MainActor
-    func creatingDeskWaitsForPartner() {
+    func creatingDeskConnectsPartner() async throws {
         let model = AppModel()
 
         model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
 
         #expect(model.currentDeskRoom != nil)
-        #expect(model.currentDeskPartner == nil)
-        #expect(model.currentDeskRoom?.code.count == 9)
+        #expect(model.currentDeskPartner == .ahe)
+        #expect(model.currentDeskRoom?.code == "DEMO-ROOM")
         #expect(model.deskActionTitle == "邀请同桌")
-        #expect(model.activeSuggestion?.action == .beginFocus)
-        #expect(model.activeSuggestion?.actionTitle == "开始 25 分钟")
-        #expect(model.toastMessage == nil)
+    }
+
+    @Test("任意邀请码加入同一个固定 Demo 房间")
+    @MainActor
+    func joiningDeskAcceptsAnyCode() async throws {
+        let model = AppModel()
+
+        model.joinDesk(code: " hello-room ")
+        try await waitUntil { model.currentDeskRoom != nil }
+
+        #expect(model.currentDeskRoom?.id == DeskRoom.preview().id)
+        #expect(model.currentDeskRoom?.code == "hello-room")
+        #expect(model.currentDeskPartner == .ahe)
     }
 
     @Test("重置计时器后生成可执行建议且不重复 Toast")
@@ -323,7 +356,7 @@ struct AppModelTests {
         #expect(model.remainingSeconds == 25 * 60)
         #expect(!model.timerRunning)
         #expect(model.activeSuggestion?.message == "计时器已经准备好，要从一段完整的 25 分钟重新开始吗？")
-        #expect(model.activeSuggestion?.action == .beginFocus)
+        #expect(model.activeSuggestion?.primaryOption.action == .beginFocus)
         #expect(model.toastMessage == nil)
     }
 
@@ -342,6 +375,21 @@ struct AppModelTests {
         #expect(model.presence == .focus)
     }
 
+    @Test("房间内开始建议回到同桌配置而不是绕过 Todo")
+    @MainActor
+    func focusSuggestionInDeskRoomOpensConfiguration() throws {
+        let model = AppModel()
+        model.deskSession = .connected(.preview())
+        model.resetTimer()
+        let suggestion = try #require(model.activeSuggestion)
+
+        model.performSuggestion(suggestion.id)
+
+        #expect(model.activeSheet == .desk)
+        #expect(!model.timerRunning)
+        #expect(model.activeFocusSession == nil)
+    }
+
     @Test("关闭建议后普通状态更新不会使它重复出现")
     @MainActor
     func dismissedSuggestionStaysDismissed() throws {
@@ -355,42 +403,17 @@ struct AppModelTests {
         #expect(model.activeSuggestion == nil)
     }
 
-    @Test("等待同桌建议会在加入流程开始时失效")
-    @MainActor
-    func deskTransitionClearsWaitingSuggestion() throws {
-        let model = AppModel()
-        model.createDeskRoom()
-        let code = try #require(model.currentDeskRoom?.code)
-        #expect(model.activeSuggestion != nil)
-
-        model.joinDesk(code: code)
-
-        #expect(model.activeSuggestion == nil)
-    }
-
-    @Test("同桌加入等待房间后建议自动失效")
-    @MainActor
-    func partnerArrivalClearsWaitingSuggestion() {
-        let model = AppModel()
-        model.createDeskRoom()
-        #expect(model.activeSuggestion != nil)
-
-        model.updateDeskPartner(.ahe)
-
-        #expect(model.currentDeskPartner == .ahe)
-        #expect(model.activeSuggestion == nil)
-    }
-
     @Test("专注结束且有同桌时建议打开留声机")
     @MainActor
     func focusCompletionWithPartnerSuggestsVoiceRecorder() throws {
         let model = AppModel()
+        model.deskSession = .connected(.preview())
 
         model.completeFocusSession()
         let suggestion = try #require(model.activeSuggestion)
 
         #expect(suggestion.message == "这一段已经完成。要给阿禾留一句话吗？")
-        #expect(suggestion.action == .openVoiceRecorder)
+        #expect(suggestion.primaryOption.action == .openVoiceRecorder)
         #expect(model.toastMessage == nil)
 
         model.performSuggestion(suggestion.id)
@@ -403,18 +426,188 @@ struct AppModelTests {
     @MainActor
     func focusCompletionWithoutPartnerSuggestsRest() throws {
         let model = AppModel()
-        model.leaveDesk()
 
         model.completeFocusSession()
         let suggestion = try #require(model.activeSuggestion)
 
         #expect(suggestion.message == "这一段已经完成，先休息一会儿。")
-        #expect(suggestion.action == .beginRest)
+        #expect(suggestion.primaryOption.action == .beginRest)
 
         model.performSuggestion(suggestion.id)
 
         #expect(model.activeSuggestion == nil)
         #expect(model.presence == .rest)
+    }
+
+    @Test("开始同桌专注会同步 Todo、时长和随机场景")
+    @MainActor
+    func startingDeskFocusUpdatesState() async throws {
+        let model = AppModel(
+            focusSessionService: MockFocusSessionService(sceneSelector: { _ in
+                RoomSceneCatalog.makeScene
+            })
+        )
+        model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
+        let task = try #require(model.tasks.first { !$0.isCompleted })
+
+        #expect(model.beginDeskFocus(durationMinutes: 45, taskID: task.id))
+        #expect(model.activeFocusTask?.id == task.id)
+        #expect(model.remainingSeconds == 45 * 60)
+        #expect(model.timerRunning)
+        #expect(model.selectedSceneID == RoomSceneCatalog.makeScene.id)
+    }
+
+    @Test("同桌专注随机池只包含四个内置场景")
+    @MainActor
+    func deskFocusUsesBuiltInScenesOnly() async throws {
+        var candidateScenes: [RoomScene] = []
+        let model = AppModel(
+            focusSessionService: MockFocusSessionService(sceneSelector: { scenes in
+                candidateScenes = scenes
+                return scenes.first
+            })
+        )
+        let generatedScene = RoomScene(
+            id: "scene-generated-test",
+            origin: .generated,
+            name: "生成场景",
+            eyebrow: "测试",
+            headline: "不应进入随机池",
+            image: RoomSceneCatalog.focusScene.image,
+            ambientPreset: .quiet,
+            weatherEffect: .none,
+            promptVersion: SceneGenerationContract.currentPromptVersion
+        )
+        model.saveGeneratedScene(generatedScene)
+        model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
+        let task = try #require(model.tasks.first { !$0.isCompleted })
+
+        #expect(model.beginDeskFocus(durationMinutes: 25, taskID: task.id))
+        #expect(candidateScenes == RoomSceneCatalog.builtIn)
+    }
+
+    @Test("手动结束只产生一次事件并引导留声机")
+    @MainActor
+    func manuallyEndingFocusIsIdempotent() async throws {
+        let model = AppModel()
+        model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
+        let task = try #require(model.tasks.first { !$0.isCompleted })
+        #expect(model.beginDeskFocus(durationMinutes: 25, taskID: task.id))
+
+        model.manuallyEndFocusSession()
+        let event = try #require(model.lastActivityEndedEvent)
+        model.manuallyEndFocusSession()
+
+        #expect(event.reason == .manuallyEnded)
+        #expect(model.lastActivityEndedEvent == event)
+        #expect(model.activeSuggestion?.primaryOption.action == .openVoiceRecorder)
+        #expect(model.activeFocusSession == nil)
+    }
+
+    @Test("计时结束产生对应事件并引导留声机")
+    @MainActor
+    func timerCompletionEndsActiveSession() async throws {
+        let model = AppModel()
+        model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
+        let task = try #require(model.tasks.first { !$0.isCompleted })
+        #expect(model.beginDeskFocus(durationMinutes: 15, taskID: task.id))
+
+        model.completeFocusSession()
+
+        #expect(model.lastActivityEndedEvent?.reason == .timerCompleted)
+        #expect(model.activeSuggestion?.primaryOption.action == .openVoiceRecorder)
+        #expect(model.activeFocusSession == nil)
+    }
+
+    @Test("同桌专注中重置计时器按手动结束处理")
+    @MainActor
+    func resettingDeskFocusEndsActiveSession() async throws {
+        let model = AppModel()
+        model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
+        let task = try #require(model.tasks.first { !$0.isCompleted })
+        #expect(model.beginDeskFocus(durationMinutes: 25, taskID: task.id))
+
+        model.resetTimer()
+
+        #expect(model.lastActivityEndedEvent?.reason == .manuallyEnded)
+        #expect(model.activeSuggestion?.primaryOption.action == .openVoiceRecorder)
+        #expect(model.activeFocusSession == nil)
+    }
+
+    @Test("活动 Todo 不可删除以保留手动结束入口")
+    @MainActor
+    func activeFocusTaskCannotBeDeleted() async throws {
+        let model = AppModel()
+        model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
+        let task = try #require(model.tasks.first { !$0.isCompleted })
+        #expect(model.beginDeskFocus(durationMinutes: 25, taskID: task.id))
+
+        model.deleteTask(task.id)
+
+        #expect(model.activeFocusTask?.id == task.id)
+        #expect(model.activeFocusSession != nil)
+    }
+
+    @Test("离开活动房间按手动结束并保留留声机引导")
+    @MainActor
+    func leavingDeskEndsActiveSession() async throws {
+        let model = AppModel()
+        model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
+        let task = try #require(model.tasks.first { !$0.isCompleted })
+        #expect(model.beginDeskFocus(durationMinutes: 25, taskID: task.id))
+
+        model.leaveDesk()
+
+        #expect(model.currentDeskRoom == nil)
+        #expect(model.lastActivityEndedEvent?.reason == .manuallyEnded)
+        #expect(model.activeSuggestion?.primaryOption.action == .openVoiceRecorder)
+        #expect(model.activeFocusSession == nil)
+    }
+
+    @Test("专注中手动切换场景不改变会话或剩余时间")
+    @MainActor
+    func switchingSceneKeepsFocusState() async throws {
+        let model = AppModel(
+            focusSessionService: MockFocusSessionService(sceneSelector: { _ in
+                RoomSceneCatalog.focusScene
+            })
+        )
+        model.createDeskRoom()
+        try await waitUntil { model.currentDeskRoom != nil }
+        let task = try #require(model.tasks.first { !$0.isCompleted })
+        #expect(model.beginDeskFocus(durationMinutes: 25, taskID: task.id))
+        let session = try #require(model.activeFocusSession)
+        let remainingSeconds = model.remainingSeconds
+
+        model.selectScene(RoomSceneCatalog.roamScene)
+
+        #expect(model.activeFocusSession == session)
+        #expect(model.remainingSeconds == remainingSeconds)
+        #expect(model.selectedSceneID == RoomSceneCatalog.roamScene.id)
+    }
+
+    @MainActor
+    private func waitUntil(
+        _ condition: @escaping @MainActor () -> Bool
+    ) async throws {
+        for _ in 0..<50 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        Issue.record("等待异步状态更新超时")
+    }
+}
+
+private struct ImmediateMemoryImageGenerator: MemoryImageGenerating {
+    func generate(prompt: String) async throws -> Data {
+        Data([0x89, 0x50, 0x4E, 0x47])
     }
 }
 
@@ -426,13 +619,43 @@ private struct ImmediateDeskPetGenerator: DeskPetGenerating {
 @MainActor
 struct SceneGenerationContractTests {
 
+    @Test("四个内置状态场景资源完整且可渲染")
+    func builtInSceneCatalogIsComplete() {
+        let scenes = RoomSceneCatalog.builtIn
+
+        #expect(scenes.count == 4)
+        #expect(Set(scenes.map(\.id)).count == scenes.count)
+        #expect(Set(scenes.map(\.image.relativePath)).count == scenes.count)
+
+        for scene in scenes {
+            let relativePath = scene.image.relativePath as NSString
+            let fileName = (relativePath.lastPathComponent as NSString).deletingPathExtension
+            let fileExtension = (relativePath.lastPathComponent as NSString).pathExtension
+            let imageURL = Bundle.main.url(forResource: fileName, withExtension: fileExtension)
+            let source = imageURL.flatMap { CGImageSourceCreateWithURL($0 as CFURL, nil) }
+            let properties = source.flatMap {
+                CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any]
+            }
+
+            #expect(source != nil, "缺少内置场景资源：\(scene.image.relativePath)")
+            #expect(properties?[kCGImagePropertyPixelWidth] as? Int == 1_920)
+            #expect(properties?[kCGImagePropertyPixelHeight] as? Int == 1_080)
+        }
+    }
+
     @Test("内置场景与生成场景使用同一资源包路径")
     func packagedScenePathsAreStable() {
         #expect(SceneGenerationContract.canvas == SceneCanvas(width: 1_920, height: 1_080, format: .png))
         #expect(RoomSceneCatalog.builtIn.allSatisfy { SceneGenerationContract.isValidSceneID($0.id) })
+        #expect(RoomSceneCatalog.states.map(\.id) == ["focus", "make", "move", "roam"])
+        #expect(RoomSceneCatalog.builtIn.map(\.id) == RoomSceneCatalog.states.map(\.id))
 
-        let scene = RoomSceneCatalog.rainyStudy
-        #expect(scene.image.relativePath == "Scenes/rainy-study.png")
+        let scene = RoomSceneCatalog.focusScene
+        #expect(scene.image.relativePath == "Scenes/focus.png")
+        #expect(scene.activityState?.ambientPresets == [.quiet, .rain])
+        #expect(RoomSceneCatalog.make.ambientPresets == [.quiet, .fireplace])
+        #expect(RoomSceneCatalog.move.availableEffects == [.none])
+        #expect(RoomSceneCatalog.roam.defaultAmbientPreset == .forest)
     }
 
     @Test("生成请求固定编译一份纯背景 Prompt")
@@ -441,7 +664,6 @@ struct SceneGenerationContractTests {
 
         #expect(request.prompt.text.contains("standalone, full-bleed 16:9 environment background"))
         #expect(request.prompt.text.contains("Do not render people, characters, desk pets"))
-        #expect(!request.prompt.text.contains("OCCUPANCY VARIANT"))
         #expect(request.styleReferences.count == RoomSceneCatalog.builtIn.count)
         #expect(request.styleReferences.allSatisfy { $0.imagePath.hasPrefix("Scenes/") })
     }
@@ -465,7 +687,6 @@ struct SceneGenerationContractTests {
         )
 
         #expect(repair.issues == [.pixelStyleMismatch, .interfaceSafeAreaConflict])
-        #expect(repair.prompt.contains("TARGETED REPAIR"))
         #expect(repair.prompt.contains("TARGETED REPAIR"))
         #expect(
             ScenePromptCompiler.compileRepairRequest(
@@ -619,7 +840,7 @@ private struct ImmediateSceneGenerator: SceneGenerating {
         progress(.generating)
         progress(.reviewing)
 
-        let template = RoomSceneCatalog.lakesideDesk
+        let template = RoomSceneCatalog.makeScene
         return SceneGenerationResult(
             requestID: request.id,
             sceneID: request.spec.sceneID,
@@ -675,5 +896,99 @@ private final class AmbientAudioSpy: AmbientAudioControlling {
 
     func stop() {
         commands.append(.stop)
+    }
+}
+
+@Suite("同桌房间服务")
+struct DeskRoomServiceTests {
+
+    @Test("创建和任意邀请码进入同一 Demo 房间")
+    func fixedRoom() async throws {
+        let service = MockDeskRoomService()
+
+        let created = try await service.createRoom()
+        let joined = try await service.joinRoom(inviteCode: "  任意邀请码  ")
+
+        #expect(created.id == joined.id)
+        #expect(created.partner == .ahe)
+        #expect(joined.partner == .ahe)
+        #expect(joined.code == "任意邀请码")
+    }
+
+    @Test("空邀请码被拒绝")
+    func rejectsEmptyCode() async {
+        let service = MockDeskRoomService()
+
+        await #expect(throws: DeskRoomServiceError.emptyInviteCode) {
+            try await service.joinRoom(inviteCode: "   ")
+        }
+    }
+}
+
+@Suite("专注会话服务")
+struct FocusSessionServiceTests {
+
+    @Test("使用合法配置创建固定场景会话")
+    func startsSession() throws {
+        let taskID = UUID()
+        let roomID = UUID()
+        let service = MockFocusSessionService(sceneSelector: { $0[1] })
+
+        let session = try service.startSession(
+            roomID: roomID,
+            configuration: FocusSessionConfiguration(durationMinutes: 25, taskID: taskID),
+            candidateScenes: [RoomSceneCatalog.focusScene, RoomSceneCatalog.makeScene]
+        )
+
+        #expect(session.roomID == roomID)
+        #expect(session.taskID == taskID)
+        #expect(session.durationSeconds == 25 * 60)
+        #expect(session.sceneID == RoomSceneCatalog.makeScene.id)
+    }
+
+    @Test("四种固定时长均可创建会话", arguments: [15, 25, 45, 60])
+    func acceptsDurations(_ minutes: Int) throws {
+        let service = MockFocusSessionService(sceneSelector: { $0[0] })
+
+        let session = try service.startSession(
+            roomID: UUID(),
+            configuration: FocusSessionConfiguration(durationMinutes: minutes, taskID: UUID()),
+            candidateScenes: [RoomSceneCatalog.focusScene]
+        )
+
+        #expect(session.durationSeconds == minutes * 60)
+    }
+
+    @Test("非法时长和空场景被拒绝")
+    func rejectsInvalidInput() {
+        let service = MockFocusSessionService(sceneSelector: { $0[0] })
+
+        #expect(throws: FocusSessionServiceError.invalidDuration) {
+            try service.startSession(
+                roomID: UUID(),
+                configuration: FocusSessionConfiguration(durationMinutes: 30, taskID: UUID()),
+                candidateScenes: [RoomSceneCatalog.focusScene]
+            )
+        }
+        #expect(throws: FocusSessionServiceError.noScenes) {
+            try service.startSession(
+                roomID: UUID(),
+                configuration: FocusSessionConfiguration(durationMinutes: 25, taskID: UUID()),
+                candidateScenes: []
+            )
+        }
+    }
+
+    @Test("两种结束方式保留对应原因")
+    func endReasons() throws {
+        let service = MockFocusSessionService(sceneSelector: { $0[0] })
+        let session = try service.startSession(
+            roomID: UUID(),
+            configuration: FocusSessionConfiguration(durationMinutes: 25, taskID: UUID()),
+            candidateScenes: [RoomSceneCatalog.focusScene]
+        )
+
+        #expect(service.endSession(session, reason: .timerCompleted).reason == .timerCompleted)
+        #expect(service.endSession(session, reason: .manuallyEnded).reason == .manuallyEnded)
     }
 }

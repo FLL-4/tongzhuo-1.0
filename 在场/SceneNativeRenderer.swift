@@ -1,32 +1,21 @@
 import SwiftUI
 
-struct SceneRenderState: Equatable {
-    let sceneID: RoomScene.ID
-    let imagePath: String
-    let weatherEffect: SceneWeatherEffect
-    let weatherEffectsEnabled: Bool
-    let presence: PresenceMode
-
-    init(model: AppModel) {
-        sceneID = model.selectedScene.id
-        imagePath = model.selectedSceneImage.relativePath
-        weatherEffect = model.selectedScene.weatherEffect
-        weatherEffectsEnabled = model.weatherEffectsEnabled
-        presence = model.presence
-    }
-}
-
 struct SceneNativeRenderer: View {
-    let model: AppModel
-    let layout: SceneStageLayout
+    @ObservedObject var model: AppModel
 
     var body: some View {
+        let scene = model.selectedScene
+
         ZStack {
-            BundledSceneImage(relativePath: model.selectedSceneImage.relativePath)
-                .accessibilityLabel(model.selectedSceneImage.accessibilityDescription)
+            BundledSceneImage(
+                relativePath: scene.image.relativePath,
+                fitMode: .fitBlurred
+            )
+            .id(scene.id)
+            .accessibilityLabel(scene.image.accessibilityDescription)
             SceneLightingOverlay(presence: model.presence)
             SceneWeatherOverlay(
-                effect: model.selectedScene.weatherEffect,
+                effect: scene.weatherEffect,
                 isEnabled: model.weatherEffectsEnabled
             )
         }

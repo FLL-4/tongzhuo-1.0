@@ -45,8 +45,9 @@ struct FocusTask: Identifiable {
 
 enum PresenceSuggestionAction: Equatable {
     case beginFocus
+    case resumeFocus
+    case inviteDeskMate
     case openVoiceRecorder
-    case openDeskRoom
     case beginRest
 }
 
@@ -54,27 +55,75 @@ enum PresenceSuggestionContext: Equatable {
     case waitingForPartner(roomID: DeskRoom.ID)
     case timerReset
     case focusCompleted(partnerID: DeskPartner.ID?)
+    case partnerReady(roomID: DeskRoom.ID)
+    case focusPaused
+    case dailyTodoCompleted(day: String)
+}
+
+private enum PresenceSuggestionCategory: Hashable {
+    case waitingForPartner
+    case timerReset
+    case focusCompleted
+    case partnerReady
+    case focusPaused
+    case dailyTodoCompleted
+}
+
+struct PresenceSuggestionOption: Equatable {
+    let title: String
+    let action: PresenceSuggestionAction
 }
 
 struct PresenceSuggestion: Identifiable, Equatable {
     let id: UUID
     let message: String
-    let actionTitle: String
-    let action: PresenceSuggestionAction
+    let primaryOption: PresenceSuggestionOption
+    let secondaryOption: PresenceSuggestionOption?
     let context: PresenceSuggestionContext
 
     init(
         id: UUID = UUID(),
         message: String,
-        actionTitle: String,
-        action: PresenceSuggestionAction,
+        primaryOption: PresenceSuggestionOption,
+        secondaryOption: PresenceSuggestionOption? = nil,
         context: PresenceSuggestionContext
     ) {
         self.id = id
         self.message = message
-        self.actionTitle = actionTitle
-        self.action = action
+        self.primaryOption = primaryOption
+        self.secondaryOption = secondaryOption
         self.context = context
+    }
+}
+
+private struct ScheduledPresenceSuggestion {
+    let dueAt: Date
+    let suggestion: PresenceSuggestion
+}
+
+private extension PresenceSuggestionContext {
+    var category: PresenceSuggestionCategory {
+        switch self {
+        case .waitingForPartner: .waitingForPartner
+        case .timerReset: .timerReset
+        case .focusCompleted: .focusCompleted
+        case .partnerReady: .partnerReady
+        case .focusPaused: .focusPaused
+        case .dailyTodoCompleted: .dailyTodoCompleted
+        }
+    }
+}
+
+private extension PresenceSuggestionCategory {
+    var priority: Int {
+        switch self {
+        case .focusCompleted: 6
+        case .dailyTodoCompleted: 5
+        case .partnerReady: 4
+        case .focusPaused: 3
+        case .timerReset: 2
+        case .waitingForPartner: 1
+        }
     }
 }
 
@@ -137,46 +186,60 @@ final class AppModel: ObservableObject {
     static let maximumTaskTitleLength = 30
 
     @Published private(set) var scenes = RoomSceneCatalog.builtIn
-    @Published private(set) var selectedSceneID = RoomSceneCatalog.rainyStudy.id
+    @Published private(set) var selectedSceneID = RoomSceneCatalog.focusScene.id
     @Published var presence: PresenceMode = .focus
     @Published var weatherEffectsEnabled = true
     @Published var ambientEnabled = true
-    @Published var remainingSeconds = 24 * 60 + 18
-    @Published var timerRunning = true
+    @Published var remainingSeconds = 25 * 60
+    @Published var timerRunning = false
     @Published var presenceSeconds = 42 * 60
     @Published var activeSheet: AppSheet?
     @Published var toastMessage: String?
-    @Published var deskSession: DeskSessionState = .connected(.preview())
+    @Published var deskSession: DeskSessionState = .disconnected
     @Published var deskErrorMessage: String?
     @Published private(set) var activeSuggestion: PresenceSuggestion?
+    @Published private(set) var activeFocusSession: FocusSession?
+    @Published private(set) var lastActivityEndedEvent: ActivityEndedEvent?
     @Published var tasks = [
         FocusTask(title: "整理首页文案", isCompleted: true),
         FocusTask(title: "补齐方案最后两页", isCompleted: false),
         FocusTask(title: "给阿禾回一段留声", isCompleted: false),
     ]
+    @Published private(set) var dailyTodoCompletedAt: Date?
 
     let voiceRecorder: VoiceRecorderController
+    let memory: MemoryController
     let deskPet: DeskPetController
     let sceneGenerator: any SceneGenerating
 
     private let ambientAudio: AmbientAudioControlling
+    private let deskRoomService: any DeskRoomServicing
+    private let focusSessionService: any FocusSessionServicing
     private var audioActivated = false
     private var timerTask: Task<Void, Never>?
     private var timerEndDate: Date?
+    private var focusSessionStarted = false
     private var toastTask: Task<Void, Never>?
     private var deskJoinTask: Task<Void, Never>?
+    private var scheduledSuggestions: [PresenceSuggestionCategory: ScheduledPresenceSuggestion] = [:]
+    private var suggestionCandidates: [PresenceSuggestionCategory: PresenceSuggestion] = [:]
+    private var dailyTodoSuggestedDays: Set<String> = []
 
     init(
         ambientAudio: AmbientAudioControlling? = nil,
         sceneGenerator: (any SceneGenerating)? = nil,
-        deskPetGenerator: (any DeskPetGenerating)? = nil
+        deskPetGenerator: (any DeskPetGenerating)? = nil,
+        deskRoomService: (any DeskRoomServicing)? = nil,
+        focusSessionService: (any FocusSessionServicing)? = nil
     ) {
         let audio = ambientAudio ?? AmbientAudioEngine()
         self.ambientAudio = audio
+        self.deskRoomService = deskRoomService ?? MockDeskRoomService()
+        self.focusSessionService = focusSessionService ?? MockFocusSessionService()
         self.sceneGenerator = sceneGenerator ?? HybridSceneGenerator()
         deskPet = DeskPetController(generator: deskPetGenerator ?? HybridDeskPetGenerator())
         voiceRecorder = VoiceRecorderController(ambientAudio: audio)
-        timerEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
+        memory = MemoryController()
         timerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
@@ -196,6 +259,8 @@ final class AppModel: ObservableObject {
     var presenceText: String { "\(presenceSeconds / 60) 分钟" }
     var completedTaskCount: Int { tasks.filter(\.isCompleted).count }
     var canAddTask: Bool { tasks.count < Self.maximumTaskCount }
+    var incompleteTasks: [FocusTask] { tasks.filter { !$0.isCompleted } }
+    private var allTasksCompleted: Bool { !tasks.isEmpty && tasks.allSatisfy(\.isCompleted) }
 
     var currentDeskRoom: DeskRoom? {
         guard case let .connected(room) = deskSession else { return nil }
@@ -203,13 +268,48 @@ final class AppModel: ObservableObject {
     }
 
     var currentDeskPartner: DeskPartner? { currentDeskRoom?.partner }
+    var activeFocusTask: FocusTask? {
+        guard let taskID = activeFocusSession?.taskID else { return nil }
+        return tasks.first { $0.id == taskID }
+    }
     var deskActionTitle: String { currentDeskRoom == nil ? "加入同桌" : "邀请同桌" }
     var selectedScene: RoomScene {
-        scenes.first(where: { $0.id == selectedSceneID }) ?? RoomSceneCatalog.rainyStudy
+        scenes.first(where: { $0.id == selectedSceneID }) ?? RoomSceneCatalog.focusScene
     }
 
     var selectedSceneImage: SceneImageAsset {
         selectedScene.image
+    }
+
+    var availableAmbientPresets: [AmbientPreset] {
+        selectedScene.activityState?.ambientPresets ?? AmbientPreset.allCases
+    }
+
+    var supportsWeatherEffects: Bool {
+        selectedScene.activityState?.availableEffects.contains(where: { $0 != .none })
+            ?? (selectedScene.weatherEffect != .none)
+    }
+
+    func selectAmbientPreset(_ preset: AmbientPreset) {
+        guard availableAmbientPresets.contains(preset) else { return }
+        guard let index = scenes.firstIndex(where: { $0.id == selectedSceneID }) else { return }
+        let scene = scenes[index]
+        scenes[index] = RoomScene(
+            id: scene.id,
+            origin: scene.origin,
+            name: scene.name,
+            eyebrow: scene.eyebrow,
+            headline: scene.headline,
+            image: scene.image,
+            ambientPreset: preset,
+            weatherEffect: scene.weatherEffect,
+            promptVersion: scene.promptVersion,
+            activityState: scene.activityState
+        )
+        if audioActivated {
+            ambientAudio.setPreset(preset)
+        }
+        showToast("已换成\(preset.displayName)")
     }
 
     func selectScene(_ scene: RoomScene) {
@@ -258,26 +358,32 @@ final class AppModel: ObservableObject {
         if mode == .focus {
             resumeTimer()
         } else {
-            pauseTimer()
+            pauseTimer(shouldObserveLongPause: true)
         }
         showToast("状态已切换为“\(mode.title)”")
     }
 
     func toggleTimer() {
-        timerRunning ? pauseTimer() : resumeTimer()
+        timerRunning ? pauseTimer(shouldObserveLongPause: true) : resumeTimer()
         showToast(timerRunning ? "继续这一段" : "计时已暂停")
     }
 
     func resetTimer() {
+        if activeFocusSession != nil {
+            endFocusSession(reason: .manuallyEnded)
+            return
+        }
+
+        cancelSuggestions(in: .focusPaused)
         remainingSeconds = 25 * 60
         timerRunning = false
         timerEndDate = nil
-        activeSuggestion = PresenceSuggestion(
+        focusSessionStarted = false
+        offerSuggestion(PresenceSuggestion(
             message: "计时器已经准备好，要从一段完整的 25 分钟重新开始吗？",
-            actionTitle: "开始这一段",
-            action: .beginFocus,
+            primaryOption: PresenceSuggestionOption(title: "开始这一段", action: .beginFocus),
             context: .timerReset
-        )
+        ))
     }
 
     func beginFocusSession() {
@@ -285,11 +391,46 @@ final class AppModel: ObservableObject {
         remainingSeconds = 25 * 60
         timerRunning = true
         timerEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
-        activeSuggestion = nil
+        markOwnFocusStarted()
         showToast("台灯已亮起，25 分钟从现在开始")
     }
 
+    @discardableResult
+    func beginDeskFocus(durationMinutes: Int, taskID: FocusTask.ID) -> Bool {
+        guard let room = currentDeskRoom,
+              let task = tasks.first(where: { $0.id == taskID && !$0.isCompleted }) else {
+            return false
+        }
+
+        do {
+            let session = try focusSessionService.startSession(
+                roomID: room.id,
+                configuration: FocusSessionConfiguration(
+                    durationMinutes: durationMinutes,
+                    taskID: task.id
+                ),
+                candidateScenes: RoomSceneCatalog.builtIn
+            )
+            guard let scene = scenes.first(where: { $0.id == session.sceneID }) else { return false }
+
+            activeFocusSession = session
+            lastActivityEndedEvent = nil
+            presence = .focus
+            remainingSeconds = session.durationSeconds
+            timerRunning = true
+            timerEndDate = Date().addingTimeInterval(TimeInterval(session.durationSeconds))
+            selectScene(scene)
+            markOwnFocusStarted()
+            showToast("已经开始 \(durationMinutes) 分钟专注")
+            return true
+        } catch {
+            showToast("暂时无法开始这一段")
+            return false
+        }
+    }
+
     func toggleWeather() {
+        guard supportsWeatherEffects else { return }
         weatherEffectsEnabled.toggle()
         showToast(weatherEffectsEnabled ? "窗外天气已打开" : "窗外天气已关闭")
     }
@@ -305,8 +446,17 @@ final class AppModel: ObservableObject {
 
     func toggleTask(_ taskID: FocusTask.ID) {
         guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
+        let wasCompleted = allTasksCompleted
         tasks[index].isCompleted.toggle()
-        if tasks[index].isCompleted { showToast("这件事已经收好了") }
+        if tasks[index].isCompleted {
+            showToast("这件事已经收好了")
+            if allTasksCompleted, dailyTodoCompletedAt == nil {
+                dailyTodoCompletedAt = Date()
+            }
+        } else {
+            dailyTodoCompletedAt = nil
+        }
+        handleDailyTodoCompletionTransition(wasCompleted: wasCompleted)
     }
 
     @discardableResult
@@ -323,6 +473,7 @@ final class AppModel: ObservableObject {
         }
 
         tasks.append(FocusTask(title: title, isCompleted: false))
+        invalidateDailyTodoSuggestionIfNeeded()
         showToast("已经放到桌上")
         return true
     }
@@ -342,70 +493,69 @@ final class AppModel: ObservableObject {
     }
 
     func deleteTask(_ taskID: FocusTask.ID) {
+        guard activeFocusSession?.taskID != taskID else { return }
         tasks.removeAll { $0.id == taskID }
+        invalidateDailyTodoSuggestionIfNeeded()
     }
 
     func formatDeskCode(_ value: String) -> String {
-        let characters = value.uppercased().filter { $0.isLetter || $0.isNumber }.prefix(8)
-        let compact = String(characters)
-        guard compact.count > 4 else { return compact }
-        let split = compact.index(compact.startIndex, offsetBy: 4)
-        return "\(compact[..<split])-\(compact[split...])"
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     func isValidDeskCode(_ value: String) -> Bool {
-        formatDeskCode(value).filter { $0 != "-" }.count == 8
+        !formatDeskCode(value).isEmpty
     }
 
     func joinDesk(code rawCode: String) {
         let code = formatDeskCode(rawCode)
         guard isValidDeskCode(code) else {
-            deskErrorMessage = "请输入完整的 8 位同桌码。"
+            deskErrorMessage = "请输入同桌邀请码。"
             return
         }
 
         deskJoinTask?.cancel()
+        cancelSuggestions(in: .waitingForPartner, .partnerReady)
         deskErrorMessage = nil
         deskSession = .joining(code: code)
-        clearDeskDependentSuggestion()
+        refreshSuggestions()
         deskJoinTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(650))
             guard !Task.isCancelled, let self else { return }
-            let now = Date()
-            deskSession = .connected(
-                DeskRoom(
-                    id: UUID(),
-                    code: code,
-                    createdAt: now,
-                    expiresAt: now.addingTimeInterval(30 * 60),
-                    partner: .ahe
-                )
-            )
-            clearDeskDependentSuggestion()
-            showToast("已经和阿禾坐到一起")
+            do {
+                let room = try await deskRoomService.joinRoom(inviteCode: code)
+                guard !Task.isCancelled else { return }
+                deskSession = .connected(room)
+                schedulePartnerReadySuggestion(for: room)
+                refreshSuggestions()
+                showToast("已经和阿禾坐到一起")
+            } catch {
+                deskSession = .disconnected
+                deskErrorMessage = "暂时无法加入房间，请重试。"
+                refreshSuggestions()
+            }
         }
     }
 
     func createDeskRoom() {
         deskJoinTask?.cancel()
+        cancelSuggestions(in: .waitingForPartner, .partnerReady)
         deskErrorMessage = nil
-        let compact = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8))
-        let code = formatDeskCode(compact)
-        let now = Date()
-        let room = DeskRoom(
-            id: UUID(),
-            code: code,
-            createdAt: now,
-            expiresAt: now.addingTimeInterval(30 * 60),
-            partner: nil
-        )
-        deskSession = .connected(room)
-        activeSuggestion = PresenceSuggestion(
-            message: "房间已经点亮。等待同桌的时候，可以先开始一小段自己的专注。",
-            actionTitle: "开始 25 分钟",
-            action: .beginFocus,
-            context: .waitingForPartner(roomID: room.id)
-        )
+        deskSession = .joining(code: "DEMO-ROOM")
+        refreshSuggestions()
+        deskJoinTask = Task { @MainActor [weak self] in
+            guard !Task.isCancelled, let self else { return }
+            do {
+                let room = try await deskRoomService.createRoom()
+                guard !Task.isCancelled else { return }
+                deskSession = .connected(room)
+                schedulePartnerReadySuggestion(for: room)
+                refreshSuggestions()
+                showToast("Demo 房间已经准备好")
+            } catch {
+                deskSession = .disconnected
+                deskErrorMessage = "暂时无法创建房间，请重试。"
+                refreshSuggestions()
+            }
+        }
     }
 
     func updateDeskPartner(_ partner: DeskPartner?) {
@@ -413,53 +563,85 @@ final class AppModel: ObservableObject {
         room.partner = partner
         deskSession = .connected(room)
         if partner != nil {
-            clearDeskDependentSuggestion()
+            cancelSuggestions(in: .waitingForPartner)
+            schedulePartnerReadySuggestion(for: room)
         } else {
+            cancelSuggestions(in: .partnerReady)
             deskPet.clear()
         }
+        refreshSuggestions()
     }
 
     func cancelDeskJoin() {
         deskJoinTask?.cancel()
+        cancelSuggestions(in: .waitingForPartner, .partnerReady)
         deskSession = .disconnected
         deskErrorMessage = nil
-        clearDeskDependentSuggestion()
+        refreshSuggestions()
     }
 
     func copyDeskCode() {
         guard let code = currentDeskRoom?.code else { return }
+        cancelSuggestions(in: .waitingForPartner)
+        refreshSuggestions()
         ClipboardClient.writeText(code)
         showToast("同桌码 \(code) 已复制")
     }
 
     func leaveDesk() {
         deskJoinTask?.cancel()
+        cancelSuggestions(in: .waitingForPartner, .partnerReady)
         deskSession = .disconnected
         deskPet.clear()
         deskErrorMessage = nil
-        clearDeskDependentSuggestion()
+        if activeFocusSession != nil {
+            endFocusSession(reason: .manuallyEnded)
+        } else {
+            timerRunning = false
+            timerEndDate = nil
+            focusSessionStarted = false
+        }
+        refreshSuggestions()
         showToast("已经离开同桌房间")
     }
 
-    func performSuggestion(_ suggestionID: PresenceSuggestion.ID) {
+    func performSuggestion(
+        _ suggestionID: PresenceSuggestion.ID,
+        action selectedAction: PresenceSuggestionAction? = nil
+    ) {
         guard let suggestion = activeSuggestion, suggestion.id == suggestionID else { return }
+        let action = selectedAction ?? suggestion.primaryOption.action
+        guard
+            action == suggestion.primaryOption.action
+                || action == suggestion.secondaryOption?.action
+        else { return }
+        suggestionCandidates[suggestion.context.category] = nil
         activeSuggestion = nil
 
-        switch suggestion.action {
+        switch action {
         case .beginFocus:
-            beginFocusSession()
+            if currentDeskRoom == nil {
+                beginFocusSession()
+            } else {
+                activeSheet = .desk
+            }
+        case .resumeFocus:
+            resumeTimer()
+            showToast("继续这一段")
+        case .inviteDeskMate:
+            copyDeskCode()
         case .openVoiceRecorder:
             activeSheet = .voice
-        case .openDeskRoom:
-            activeSheet = .desk
         case .beginRest:
             setPresence(.rest)
         }
+        refreshSuggestions()
     }
 
     func dismissSuggestion(_ suggestionID: PresenceSuggestion.ID) {
-        guard activeSuggestion?.id == suggestionID else { return }
-        activeSuggestion = nil
+        guard let suggestion = activeSuggestion, suggestion.id == suggestionID else { return }
+        suggestionCandidates[suggestion.context.category] = nil
+        refreshSuggestions()
     }
 
     func showToast(_ message: String) {
@@ -476,16 +658,25 @@ final class AppModel: ObservableObject {
         guard remainingSeconds > 0 else { return }
         timerRunning = true
         timerEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
-        activeSuggestion = nil
+        markOwnFocusStarted()
     }
 
-    private func pauseTimer() {
+    private func pauseTimer(shouldObserveLongPause: Bool) {
+        let wasRunning = timerRunning
         updateRemainingTime()
         timerRunning = false
         timerEndDate = nil
+        cancelSuggestions(in: .timerReset)
+        if presence != .focus {
+            cancelSuggestions(in: .focusPaused)
+        } else if wasRunning, shouldObserveLongPause, remainingSeconds > 0 {
+            schedulePausedSuggestion()
+        }
+        refreshSuggestions()
     }
 
     private func tick() {
+        refreshSuggestions()
         guard timerRunning else { return }
         presenceSeconds += 1
         updateRemainingTime()
@@ -495,35 +686,210 @@ final class AppModel: ObservableObject {
     }
 
     func completeFocusSession() {
+        cancelSuggestions(in: .focusPaused, .timerReset)
+        if activeFocusSession != nil {
+            endFocusSession(reason: .timerCompleted)
+            return
+        }
+
         remainingSeconds = 0
         timerRunning = false
         timerEndDate = nil
+        focusSessionStarted = false
 
         if let partner = currentDeskPartner {
-            activeSuggestion = PresenceSuggestion(
+            offerSuggestion(PresenceSuggestion(
                 message: "这一段已经完成。要给\(partner.name)留一句话吗？",
-                actionTitle: "打开留声机",
-                action: .openVoiceRecorder,
+                primaryOption: PresenceSuggestionOption(title: "打开留声机", action: .openVoiceRecorder),
                 context: .focusCompleted(partnerID: partner.id)
-            )
+            ))
         } else {
-            activeSuggestion = PresenceSuggestion(
+            offerSuggestion(PresenceSuggestion(
                 message: "这一段已经完成，先休息一会儿。",
-                actionTitle: "休息一下",
-                action: .beginRest,
+                primaryOption: PresenceSuggestionOption(title: "休息一下", action: .beginRest),
                 context: .focusCompleted(partnerID: nil)
-            )
+            ))
         }
     }
 
-    private func clearDeskDependentSuggestion() {
-        guard let suggestion = activeSuggestion else { return }
-        switch suggestion.context {
-        case .waitingForPartner, .focusCompleted(partnerID: .some(_)):
-            activeSuggestion = nil
-        case .timerReset, .focusCompleted(partnerID: nil):
-            break
+    func manuallyEndFocusSession() {
+        endFocusSession(reason: .manuallyEnded)
+    }
+
+    private func endFocusSession(reason: ActivityEndReason) {
+        guard let session = activeFocusSession else { return }
+        activeFocusSession = nil
+        remainingSeconds = 0
+        timerRunning = false
+        timerEndDate = nil
+        focusSessionStarted = false
+        cancelSuggestions(in: .focusPaused, .timerReset)
+        lastActivityEndedEvent = focusSessionService.endSession(session, reason: reason)
+
+        let partner = currentDeskPartner
+        offerSuggestion(PresenceSuggestion(
+            message: partner.map { "这一段已经完成。要给\($0.name)留一句话吗？" }
+                ?? "这一段已经完成。要留下一句话吗？",
+            primaryOption: PresenceSuggestionOption(title: "打开留声机", action: .openVoiceRecorder),
+            context: .focusCompleted(partnerID: partner?.id)
+        ))
+    }
+
+    private func scheduleWaitingSuggestion(for room: DeskRoom) {
+        cancelSuggestions(in: .waitingForPartner)
+        guard !focusSessionStarted else { return }
+        scheduleSuggestion(
+            PresenceSuggestion(
+                message: "房间还在等人。你可以先开始一小段专注，或者把同桌码发给想邀请的人。",
+                primaryOption: PresenceSuggestionOption(title: "开始 25 分钟", action: .beginFocus),
+                secondaryOption: PresenceSuggestionOption(title: "邀请同桌", action: .inviteDeskMate),
+                context: .waitingForPartner(roomID: room.id)
+            ),
+            after: 5 * 60
+        )
+    }
+
+    private func schedulePartnerReadySuggestion(for room: DeskRoom?) {
+        cancelSuggestions(in: .partnerReady)
+        guard let room, let partner = room.partner else { return }
+        guard !focusSessionStarted else { return }
+        scheduleSuggestion(
+            PresenceSuggestion(
+                message: "\(partner.name)已经坐下。要一起开始一段专注吗？",
+                primaryOption: PresenceSuggestionOption(title: "一起开始", action: .beginFocus),
+                context: .partnerReady(roomID: room.id)
+            ),
+            after: 30
+        )
+    }
+
+    private func schedulePausedSuggestion() {
+        cancelSuggestions(in: .focusPaused)
+        scheduleSuggestion(
+            PresenceSuggestion(
+                message: "已经暂停了一会儿。要从剩下的时间继续吗？",
+                primaryOption: PresenceSuggestionOption(title: "继续", action: .resumeFocus),
+                context: .focusPaused
+            ),
+            after: 5 * 60
+        )
+    }
+
+    private func markOwnFocusStarted() {
+        focusSessionStarted = true
+        cancelSuggestions(
+            in: .timerReset,
+            .focusPaused,
+            .waitingForPartner,
+            .partnerReady
+        )
+        refreshSuggestions()
+    }
+
+    private func handleDailyTodoCompletionTransition(wasCompleted: Bool) {
+        guard !wasCompleted, allTasksCompleted else {
+            invalidateDailyTodoSuggestionIfNeeded()
+            return
         }
+
+        let day = Self.currentDayKey()
+        guard !dailyTodoSuggestedDays.contains(day) else { return }
+        dailyTodoSuggestedDays.insert(day)
+        offerSuggestion(PresenceSuggestion(
+            message: "今天放在桌上的事都完成了。要用留声机记下今天吗？",
+            primaryOption: PresenceSuggestionOption(title: "打开留声机", action: .openVoiceRecorder),
+            context: .dailyTodoCompleted(day: day)
+        ))
+    }
+
+    private func invalidateDailyTodoSuggestionIfNeeded() {
+        guard !allTasksCompleted else { return }
+        cancelSuggestions(in: .dailyTodoCompleted)
+        refreshSuggestions()
+    }
+
+    private func offerSuggestion(_ suggestion: PresenceSuggestion) {
+        let category = suggestion.context.category
+        scheduledSuggestions[category] = nil
+        suggestionCandidates[category] = suggestion
+        refreshSuggestions()
+    }
+
+    private func scheduleSuggestion(_ suggestion: PresenceSuggestion, after seconds: TimeInterval) {
+        let category = suggestion.context.category
+        suggestionCandidates[category] = nil
+        scheduledSuggestions[category] = ScheduledPresenceSuggestion(
+            dueAt: Date().addingTimeInterval(seconds),
+            suggestion: suggestion
+        )
+        refreshSuggestions()
+    }
+
+    private func cancelSuggestions(in categories: PresenceSuggestionCategory...) {
+        for category in categories {
+            scheduledSuggestions[category] = nil
+            suggestionCandidates[category] = nil
+        }
+    }
+
+    private func refreshSuggestions(now: Date = Date()) {
+        let dueSuggestions = scheduledSuggestions.filter { $0.value.dueAt <= now }
+        for (category, scheduled) in dueSuggestions {
+            scheduledSuggestions[category] = nil
+            suggestionCandidates[category] = scheduled.suggestion
+        }
+        suggestionCandidates = suggestionCandidates.filter { isSuggestionValid($0.value) }
+        activeSuggestion = suggestionCandidates.values.max {
+            $0.context.category.priority < $1.context.category.priority
+        }
+    }
+
+    private func isSuggestionValid(_ suggestion: PresenceSuggestion) -> Bool {
+        switch suggestion.context {
+        case .waitingForPartner(let roomID):
+            guard
+                let room = currentDeskRoom,
+                room.id == roomID,
+                room.partner == nil,
+                !focusSessionStarted,
+                room.expiresAt > Date()
+            else { return false }
+            return true
+
+        case .timerReset:
+            return !timerRunning && remainingSeconds == 25 * 60
+
+        case .focusCompleted(let partnerID):
+            guard !timerRunning, remainingSeconds == 0 else { return false }
+            return currentDeskPartner?.id == partnerID
+
+        case .partnerReady(let roomID):
+            return currentDeskRoom?.id == roomID
+                && currentDeskPartner != nil
+                && !focusSessionStarted
+                && !timerRunning
+
+        case .focusPaused:
+            return focusSessionStarted
+                && presence == .focus
+                && !timerRunning
+                && remainingSeconds > 0
+
+        case .dailyTodoCompleted(let day):
+            return dailyTodoSuggestedDays.contains(day)
+                && day == Self.currentDayKey()
+                && allTasksCompleted
+        }
+    }
+
+    private static func currentDayKey(now: Date = Date(), calendar: Calendar = .current) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: now)
+        return String(
+            format: "%04d-%02d-%02d",
+            components.year ?? 0,
+            components.month ?? 0,
+            components.day ?? 0
+        )
     }
 
     private func updateRemainingTime() {

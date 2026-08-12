@@ -66,39 +66,6 @@ struct APIConfiguration: Equatable {
     var isTextModelConfigured: Bool { text.isConfigured }
     var isImageModelConfigured: Bool { image.isConfigured }
 
-    // Legacy flat accessors keep older callers and YAML fixtures source-compatible.
-    var provider: Provider {
-        get { text.provider }
-        set { text.provider = newValue }
-    }
-    var apiKey: String {
-        get { text.apiKey }
-        set { text.apiKey = newValue }
-    }
-    var baseURL: String {
-        get { text.baseURL }
-        set { text.baseURL = newValue }
-    }
-    var chatModel: String {
-        get { text.model }
-        set { text.model = newValue }
-    }
-    var imageEndpoint: String {
-        get { image.endpoint }
-        set { image.endpoint = newValue }
-    }
-    var imageModel: String {
-        get { image.model }
-        set { image.model = newValue }
-    }
-    var imageSize: String {
-        get { image.size }
-        set { image.size = newValue }
-    }
-    var isConfigured: Bool { image.isConfigured }
-
-    var sourceURL: URL { APIConfiguration.defaultURL }
-
     static var defaultURL: URL {
         if let override = ProcessInfo.processInfo.environment["ZAICHANG_API_CONFIG"], !override.isEmpty {
             return URL(fileURLWithPath: override)
@@ -121,18 +88,17 @@ struct APIConfiguration: Equatable {
         var configuration = APIConfiguration()
         let values = YAMLScalarParser.parse(yaml)
 
-        let legacyProvider = values["provider"].flatMap { Provider(rawValue: $0.lowercased()) }
-        configuration.text.provider = provider(values["text.provider"]) ?? legacyProvider ?? configuration.text.provider
-        configuration.text.apiKey = values["text.api_key"] ?? values["api_key"] ?? configuration.text.apiKey
-        configuration.text.baseURL = values["text.base_url"] ?? values["base_url"] ?? configuration.text.baseURL
-        configuration.text.model = values["text.model"] ?? values["chat_model"] ?? configuration.text.model
+        configuration.text.provider = provider(values["text.provider"]) ?? configuration.text.provider
+        configuration.text.apiKey = values["text.api_key"] ?? configuration.text.apiKey
+        configuration.text.baseURL = values["text.base_url"] ?? configuration.text.baseURL
+        configuration.text.model = values["text.model"] ?? configuration.text.model
 
-        configuration.image.provider = provider(values["image.provider"]) ?? legacyProvider ?? configuration.image.provider
-        configuration.image.apiKey = values["image.api_key"] ?? values["api_key"] ?? configuration.image.apiKey
-        configuration.image.baseURL = values["image.base_url"] ?? values["base_url"] ?? configuration.image.baseURL
-        configuration.image.endpoint = values["image.endpoint"] ?? values["image_endpoint"] ?? configuration.image.endpoint
-        configuration.image.model = values["image.model"] ?? values["image_model"] ?? configuration.image.model
-        configuration.image.size = values["image.size"] ?? values["image_size"] ?? configuration.image.size
+        configuration.image.provider = provider(values["image.provider"]) ?? configuration.image.provider
+        configuration.image.apiKey = values["image.api_key"] ?? configuration.image.apiKey
+        configuration.image.baseURL = values["image.base_url"] ?? configuration.image.baseURL
+        configuration.image.endpoint = values["image.endpoint"] ?? configuration.image.endpoint
+        configuration.image.model = values["image.model"] ?? configuration.image.model
+        configuration.image.size = values["image.size"] ?? configuration.image.size
         configuration.image.sceneModel = values["image.scene_model"] ?? configuration.image.sceneModel
         configuration.image.sceneSize = values["image.scene_size"] ?? configuration.image.sceneSize
 

@@ -13,6 +13,7 @@ struct SceneStageView: View {
     let layout: SceneStageLayout
     var bottomInset: CGFloat = 0
     @State private var partnerPopoverPresented = false
+    @State private var endFocusConfirmationPresented = false
 
     init(model: AppModel, layout: SceneStageLayout, bottomInset: CGFloat = 0) {
         self.model = model
@@ -23,7 +24,7 @@ struct SceneStageView: View {
 
     var body: some View {
         ZStack {
-            SceneNativeRenderer(model: model, layout: layout)
+            SceneNativeRenderer(model: model)
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(model.selectedScene.eyebrow)
@@ -40,6 +41,32 @@ struct SceneStageView: View {
             .padding(.top, 30)
             .padding(.leading, 28)
             .allowsHitTesting(false)
+
+            if let task = model.activeFocusTask {
+                HStack(spacing: 10) {
+                    Label(task.title, systemImage: "checklist")
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(2)
+
+                    Button {
+                        endFocusConfirmationPresented = true
+                    } label: {
+                        Label("结束专注", systemImage: "stop.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .adaptiveHitTarget(minHeight: 32)
+                    }
+                    .buttonStyle(ZaichangPlainButtonStyle())
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(.black.opacity(0.66))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.16)))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .frame(maxWidth: layout == .compact ? 310 : 420, alignment: .leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, layout == .compact ? 104 : 102)
+                .padding(.leading, 28)
+            }
 
             if let partner = model.currentDeskPartner {
                 Button {
@@ -125,9 +152,8 @@ struct SceneStageView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            if let profile = deskPet.activeProfile {
+            if let profile = deskPet.activeProfile, !deskPet.isFloating {
                 DeskPetOverlay(profile: profile)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, layout == .compact ? 14 : 22)
                     .padding(.bottom, 84 + bottomInset)
                     .transition(.scale.combined(with: .opacity))
@@ -139,6 +165,18 @@ struct SceneStageView: View {
                 .padding(.bottom, 22 + bottomInset)
         }
         .clipped()
+        .confirmationDialog(
+            "现在结束这一段专注？",
+            isPresented: $endFocusConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("确认结束专注", role: .destructive) {
+                model.manuallyEndFocusSession()
+            }
+            Button("继续专注", role: .cancel) {}
+        } message: {
+            Text("结束后会引导你进入留声机，Todo 不会被自动完成。")
+        }
     }
 }
 
@@ -231,19 +269,42 @@ private struct PresenceSuggestionView: View {
                     .font(.system(size: 12))
                     .lineLimit(3)
 
-                Button {
-                    model.performSuggestion(suggestion.id)
-                } label: {
-                    Label(suggestion.actionTitle, systemImage: suggestion.action.symbol)
-                        .font(.system(size: 11, weight: .semibold))
-                        .padding(.horizontal, 10)
-                        .frame(minHeight: 30)
-                        .adaptiveHitTarget(minHeight: 30)
-                        .foregroundStyle(Color(red: 0.17, green: 0.13, blue: 0.09))
-                        .background(Palette.amber)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                HStack(spacing: 8) {
+                    Button {
+                        model.performSuggestion(suggestion.id)
+                    } label: {
+                        Label(
+                            suggestion.primaryOption.title,
+                            systemImage: suggestion.primaryOption.action.symbol
+                        )
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .frame(minHeight: 30)
+                            .adaptiveHitTarget(minHeight: 30)
+                            .foregroundStyle(Color(red: 0.17, green: 0.13, blue: 0.09))
+                            .background(Palette.amber)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(ZaichangPlainButtonStyle())
+
+                    if let secondaryOption = suggestion.secondaryOption {
+                        Button {
+                            model.performSuggestion(suggestion.id, action: secondaryOption.action)
+                        } label: {
+                            Label(secondaryOption.title, systemImage: secondaryOption.action.symbol)
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.horizontal, 10)
+                                .frame(minHeight: 30)
+                                .adaptiveHitTarget(minHeight: 30)
+                                .foregroundStyle(Palette.ink)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.white.opacity(0.24))
+                                )
+                        }
+                        .buttonStyle(ZaichangPlainButtonStyle())
+                    }
                 }
-                .buttonStyle(ZaichangPlainButtonStyle())
             }
             .frame(maxWidth: 330, alignment: .leading)
             .layoutPriority(1)
@@ -269,8 +330,9 @@ private extension PresenceSuggestionAction {
     var symbol: String {
         switch self {
         case .beginFocus: "play.fill"
+        case .resumeFocus: "play.fill"
+        case .inviteDeskMate: "person.badge.plus"
         case .openVoiceRecorder: "mic"
-        case .openDeskRoom: "person.2"
         case .beginRest: "cup.and.saucer"
         }
     }
@@ -360,6 +422,7 @@ private struct SceneControlsView: View {
                     Image(systemName: "arrow.counterclockwise")
                         .adaptiveHitTarget(minWidth: 32, minHeight: 32)
                 }
+                .disabled(model.activeFocusSession != nil)
                 .accessibilityLabel("重置计时器")
                 .help("重置计时器")
             }
@@ -368,20 +431,47 @@ private struct SceneControlsView: View {
             .padding(.horizontal, 5)
             .liquidSceneControl()
 
-            SceneIconButton(
-                symbol: "cloud.sun",
-                isOn: model.weatherEffectsEnabled,
-                onColor: Palette.blue,
-                help: "窗外天气",
-                action: model.toggleWeather
-            )
-            SceneIconButton(
-                symbol: model.ambientEnabled ? "speaker.wave.2" : "speaker.slash",
-                isOn: model.ambientEnabled,
-                onColor: Palette.blue,
-                help: model.selectedScene.ambientPreset.displayName,
-                action: model.toggleAmbient
-            )
+            if model.supportsWeatherEffects {
+                SceneIconButton(
+                    symbol: "cloud.sun",
+                    isOn: model.weatherEffectsEnabled,
+                    onColor: Palette.blue,
+                    help: "窗外天气",
+                    action: model.toggleWeather
+                )
+            }
+            Menu {
+                Button {
+                    model.toggleAmbient()
+                } label: {
+                    Label(
+                        model.ambientEnabled ? "关闭环境声音" : "打开环境声音",
+                        systemImage: model.ambientEnabled ? "speaker.slash" : "speaker.wave.2"
+                    )
+                }
+                Divider()
+                ForEach(model.availableAmbientPresets, id: \.self) { preset in
+                    Button {
+                        model.selectAmbientPreset(preset)
+                    } label: {
+                        if preset == model.selectedScene.ambientPreset {
+                            Label(preset.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(preset.displayName)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: model.ambientEnabled ? "speaker.wave.2" : "speaker.slash")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(model.ambientEnabled ? Palette.blue : Color.gray)
+                    .frame(width: 46, height: 46)
+                    .liquidSceneControl()
+            }
+            .buttonStyle(ZaichangPlainButtonStyle())
+            .menuIndicator(.hidden)
+            .help("选择环境声音")
+            .accessibilityLabel("选择环境声音")
         }
     }
 
@@ -418,6 +508,7 @@ private struct SceneControlsView: View {
                     Image(systemName: "arrow.counterclockwise")
                         .adaptiveHitTarget(minWidth: 26, minHeight: 30)
                 }
+                .disabled(model.activeFocusSession != nil)
                 .accessibilityLabel("重置计时器")
             }
             .buttonStyle(ZaichangPlainButtonStyle())
@@ -428,11 +519,25 @@ private struct SceneControlsView: View {
             .liquidSceneControl()
 
             Menu {
-                Toggle(isOn: binding(for: \AppModel.weatherEffectsEnabled, toggle: model.toggleWeather)) {
-                    Label("窗外天气", systemImage: "cloud.sun")
+                if model.supportsWeatherEffects {
+                    Toggle(isOn: binding(for: \AppModel.weatherEffectsEnabled, toggle: model.toggleWeather)) {
+                        Label("窗外天气", systemImage: "cloud.sun")
+                    }
                 }
                 Toggle(isOn: binding(for: \AppModel.ambientEnabled, toggle: model.toggleAmbient)) {
                     Label(model.selectedScene.ambientPreset.displayName, systemImage: "speaker.wave.2")
+                }
+                Divider()
+                ForEach(model.availableAmbientPresets, id: \.self) { preset in
+                    Button {
+                        model.selectAmbientPreset(preset)
+                    } label: {
+                        if preset == model.selectedScene.ambientPreset {
+                            Label(preset.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(preset.displayName)
+                        }
+                    }
                 }
             } label: {
                 Image(systemName: "slider.horizontal.3")
