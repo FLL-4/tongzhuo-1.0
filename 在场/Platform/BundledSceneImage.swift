@@ -11,13 +11,21 @@ struct BundledSceneImage: View {
     var body: some View {
 #if os(macOS)
         if let image = imageURL.flatMap(NSImage.init(contentsOf:)) {
-            Image(nsImage: image).resizable().scaledToFill()
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
         } else {
             fallback
         }
 #elseif os(iOS) || os(visionOS)
         if let image = imageURL.flatMap({ try? Data(contentsOf: $0) }).flatMap(UIImage.init(data:)) {
-            Image(uiImage: image).resizable().scaledToFill()
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
         } else {
             fallback
         }
