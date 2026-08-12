@@ -7,6 +7,9 @@
 
 import Foundation
 import Testing
+#if os(macOS)
+import AppKit
+#endif
 @testable import 在场
 
 @Suite("在场 AppModel")
@@ -121,6 +124,39 @@ struct AppModelTests {
         #expect(controller.state == .idle)
         #expect(controller.activeProfile == nil)
     }
+
+#if os(macOS)
+    @Test("主窗口最小化时桌宠进入浮动状态，窗口关闭时清理")
+    @MainActor
+    func floatingDeskPetTracksWindowLifecycle() async throws {
+        let controller = DeskPetController(generator: ImmediateDeskPetGenerator())
+        controller.selectPhoto(Data([0x01, 0x02]), for: .ahe)
+        controller.generate()
+        try await Task.sleep(for: .milliseconds(20))
+        controller.setEnabled(true)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 1_200, height: 760),
+            styleMask: [.titled, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        let floatingWindow = FloatingDeskPetWindow()
+        floatingWindow.attach(to: window, controller: controller)
+
+        NotificationCenter.default.post(
+            name: NSWindow.willMiniaturizeNotification,
+            object: window
+        )
+        #expect(controller.isFloating)
+
+        NotificationCenter.default.post(
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
+        #expect(!controller.isFloating)
+    }
+#endif
 
     @Test("同桌状态不会改变静态背景资源")
     @MainActor
