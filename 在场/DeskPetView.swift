@@ -101,7 +101,7 @@ struct DeskPetSection: View {
                         .background(Palette.surface3)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("(profile.partnerName)的桌宠预览")
+                        Text("\(profile.partnerName)的桌宠预览")
                             .font(.system(size: 11, weight: .semibold))
                         Text("桌宠已经生成，可以放到当前场景里。")
                             .font(.system(size: 9))

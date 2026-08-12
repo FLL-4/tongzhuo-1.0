@@ -87,7 +87,8 @@ struct VoiceSheet: View {
             .padding(.vertical, 18)
 
             Button {
-                if recorder.saveDraft(delivery: delivery) != nil {
+                if let note = recorder.saveDraft(delivery: delivery) {
+                    memory.attachVoiceNote(note.id)
                     dismiss()
                     model.showToast("语音已保存，继续整理为记忆卡片")
                     model.activeSheet = .memory

@@ -258,7 +258,7 @@ struct AppModelTests {
         model.toggleAmbient()
 
         #expect(!model.weatherEffectsEnabled)
-        #expect(!model.ambientEnabled)
+        #expect(model.ambientEnabled)
     }
 
     @Test("任务完成数来自任务模型")
@@ -324,7 +324,7 @@ struct AppModelTests {
         model.deactivateAudio()
 
         #expect(audio.commands == [
-            .start(.rain, true),
+            .start(.rain, false),
             .preset(.forest),
             .stop,
         ])
@@ -340,7 +340,7 @@ struct AppModelTests {
         model.enterMobileBackground()
 
         #expect(audio.commands == [
-            .start(.rain, true),
+            .start(.rain, false),
             .stop,
         ])
     }
@@ -356,9 +356,9 @@ struct AppModelTests {
         model.toggleAmbient()
 
         #expect(audio.commands == [
-            .start(.rain, true),
-            .enabled(false),
+            .start(.rain, false),
             .enabled(true),
+            .enabled(false),
         ])
     }
 
@@ -619,6 +619,51 @@ struct SceneGenerationContractTests {
 @Suite("场景工坊流程")
 @MainActor
 struct SceneWorkshopTests {
+
+    @Test("未配置图像服务时场景生图流程会写入标准画布资产")
+    func hybridSceneGenerationUsesPersistedMockAsset() async throws {
+        let spec = GeneratedSceneSpec(
+            sceneID: "scene-persisted",
+            name: "测试场景",
+            location: "安静的木屋",
+            timeOfDay: .dusk,
+            weather: "晴朗",
+            mood: .warm,
+            windowView: "树林",
+            lighting: "壁炉",
+            keyObjects: ["书本"],
+            ambientPreset: .quiet,
+            effectPreset: .none
+        )
+        let request = try SceneGenerationRequest(spec: spec, styleReferences: [])
+        let generator = HybridSceneGenerator(configuration: .from(yaml: ""))
+        let result = try await generator.generate(request) { _ in }
+
+        #expect(result.review.isApproved)
+        #expect(result.image.canvas == SceneGenerationContract.canvas)
+        #expect(SceneImageLocator.url(for: result.image.relativePath) != nil)
+    }
+
+    @Test("生成场景元数据可以从本地存储恢复")
+    func generatedSceneMetadataPersists() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("zaichang-scenes-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let persistence = ScenePersistence(fileURL: fileURL)
+        let scene = RoomScene(
+            id: "scene-restored",
+            origin: .generated,
+            name: "恢复测试",
+            eyebrow: "黄昏 · 晴朗",
+            headline: "在这里待一会儿",
+            image: .packaged(sceneID: "scene-restored", metadata: SceneImageMetadata(accessibilityDescription: "测试")),
+            ambientPreset: .quiet,
+            weatherEffect: .none,
+            promptVersion: SceneGenerationContract.currentPromptVersion
+        )
+        try persistence.save([scene])
+        #expect(persistence.load() == [scene])
+    }
 
     @Test("自然语言描述会形成可编辑的结构化场景")
     func mockDrafterCreatesEditableSpec() throws {

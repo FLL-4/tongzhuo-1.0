@@ -11,6 +11,17 @@ enum DeskPetGenerationState: Equatable {
     case failed(String)
 }
 
+enum DeskPetPersistenceError: LocalizedError {
+    case saveFailed(String)
+    case removeFailed(String)
+    var errorDescription: String? {
+        switch self {
+        case .saveFailed(let message): "桌宠保存失败：\(message)"
+        case .removeFailed(let message): "桌宠缓存清理失败：\(message)"
+        }
+    }
+}
+
 // MARK: - Base Class
 
 /// 桌宠数据基类，所有桌宠类型继承此类
@@ -498,7 +509,12 @@ final class DeskPetController: ObservableObject {
                     isEnabled: false
                 )
                 profile = generatedProfile
-                try? persistence.save(generatedProfile)
+                do {
+                    try persistence.save(generatedProfile)
+                } catch {
+                    state = .failed(DeskPetPersistenceError.saveFailed(error.localizedDescription).localizedDescription)
+                    return
+                }
                 state = .ready
             } catch is CancellationError {
                 // Replacing a photo or leaving the room cancels the old job.
@@ -533,7 +549,11 @@ final class DeskPetController: ObservableObject {
 
     private func persistCurrentProfile() {
         guard let profile else { return }
-        try? persistence.save(profile)
+        do {
+            try persistence.save(profile)
+        } catch {
+            state = .failed(DeskPetPersistenceError.saveFailed(error.localizedDescription).localizedDescription)
+        }
     }
 
     deinit {

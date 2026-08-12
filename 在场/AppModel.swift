@@ -189,7 +189,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var selectedSceneID = RoomSceneCatalog.focusScene.id
     @Published var presence: PresenceMode = .focus
     @Published var weatherEffectsEnabled = true
-    @Published var ambientEnabled = true
+    @Published var ambientEnabled = false
     @Published var remainingSeconds = 24 * 60 + 18
     @Published var timerRunning = true
     @Published var presenceSeconds = 42 * 60
@@ -209,6 +209,8 @@ final class AppModel: ObservableObject {
     let memory: MemoryController
     let deskPet: DeskPetController
     let sceneGenerator: any SceneGenerating
+    private let scenePersistence: ScenePersistence
+    private let todoDefaults: UserDefaults
 
     private let ambientAudio: AmbientAudioControlling
     private var audioActivated = false
@@ -226,6 +228,12 @@ final class AppModel: ObservableObject {
         sceneGenerator: (any SceneGenerating)? = nil,
         deskPetGenerator: (any DeskPetGenerating)? = nil
     ) {
+        scenePersistence = ScenePersistence()
+        todoDefaults = .standard
+        let persistedGeneratedScenes = scenePersistence.load()
+        scenes = RoomSceneCatalog.builtIn + persistedGeneratedScenes
+        let storedTodoDate = todoDefaults.object(forKey: "dailyTodoCompletedAt") as? Date
+        dailyTodoCompletedAt = storedTodoDate.flatMap { Self.currentDayKey(now: $0) == Self.currentDayKey() ? $0 : nil }
         let audio = ambientAudio ?? AmbientAudioEngine()
         self.ambientAudio = audio
         self.sceneGenerator = sceneGenerator ?? HybridSceneGenerator()
@@ -313,6 +321,11 @@ final class AppModel: ObservableObject {
         guard scene.origin == .generated else { return }
         scenes.removeAll { $0.id == scene.id }
         scenes.append(scene)
+        do {
+            try scenePersistence.save(scenes.filter { $0.origin == .generated })
+        } catch {
+            showToast("场景已加入本次使用，但保存失败")
+        }
         selectedSceneID = scene.id
         if audioActivated {
             ambientAudio.setPreset(scene.ambientPreset)
@@ -401,9 +414,11 @@ final class AppModel: ObservableObject {
             showToast("这件事已经收好了")
             if allTasksCompleted, dailyTodoCompletedAt == nil {
                 dailyTodoCompletedAt = Date()
+                todoDefaults.set(dailyTodoCompletedAt, forKey: "dailyTodoCompletedAt")
             }
         } else {
             dailyTodoCompletedAt = nil
+            todoDefaults.removeObject(forKey: "dailyTodoCompletedAt")
         }
         handleDailyTodoCompletionTransition(wasCompleted: wasCompleted)
     }

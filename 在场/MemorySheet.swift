@@ -11,7 +11,6 @@ struct MemorySheet: View {
     @State private var keyMoment = ""
     @State private var mood: MemoryMood = .warm
     @State private var delivery: MemoryDeliveryPlan = .activityEnd
-    @State private var submitted = false
 
     var body: some View {
         SheetContainer(eyebrow: "留声机", title: "把这一刻留下来", dismiss: dismiss) {
@@ -77,7 +76,7 @@ struct MemorySheet: View {
             Text(card.title).font(.system(size: 18, weight: .semibold))
             Text(card.observation).font(.system(size: 12))
             Text("步骤 3 / 3 · 选择送达策略").font(.system(size: 12, weight: .semibold))
-            ForEach(MemoryDeliveryPlan.allCases) { plan in Button { var x = card; x.deliveryPlan = plan; x.deliveryState = plan == .archiveOnly ? .notScheduled : .scheduled; memory.updateCard(x) } label: { Label(plan.title, systemImage: card.deliveryPlan == plan ? "checkmark.circle.fill" : "circle").adaptiveFullWidthHitTarget(minHeight: 34) }.buttonStyle(ZaichangPlainButtonStyle()) }
+            ForEach(MemoryDeliveryPlan.allCases) { plan in Button { var x = card; x.deliveryPlan = plan; x.deliveryState = plan == .archiveOnly ? .notScheduled : .scheduled; memory.updateDraft(x) } label: { Label(plan.title, systemImage: card.deliveryPlan == plan ? "checkmark.circle.fill" : "circle").adaptiveFullWidthHitTarget(minHeight: 34) }.buttonStyle(ZaichangPlainButtonStyle()) }
             Button {
                 memory.confirm(card)
                 dismiss()
