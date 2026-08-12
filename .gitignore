@@ -15,3 +15,6 @@ xcuserdata/
 .secrets/
 在场/Config/api.yaml
 api.yaml
+
+# Local AI operation journal; intentionally excluded from version control.
+AI操作记录.local.md
