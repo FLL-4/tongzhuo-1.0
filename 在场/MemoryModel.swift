@@ -9,7 +9,8 @@ enum MemoryMood: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum MemoryReviewState: Equatable, Codable { case draft, generating, ready, confirmed, failed(String) }
+enum MemoryReviewState: Equatable, Codable { case draft, ready, confirmed, archived, failed(String) }
+enum MemoryGenerationState: Equatable { case idle, generating }
 enum MemoryDeliveryState: Equatable, Codable { case notScheduled, scheduled, delivered, opened, failed(String) }
 enum MemoryDeliveryPlan: String, CaseIterable, Codable, Identifiable {
     case activityEnd, nextFocusEnd, scheduled, archiveOnly
@@ -71,7 +72,7 @@ enum MemoryImageError: LocalizedError { case invalidEndpoint, requestFailed, inv
 final class MemoryController: ObservableObject {
     @Published private(set) var drafts: [MemoryDraft] = []
     @Published private(set) var cards: [MemoryDraft] = []
-    @Published private(set) var phase: MemoryReviewState = .draft
+    @Published private(set) var generationState: MemoryGenerationState = .idle
     private let imageGenerator: any MemoryImageGenerating
     private var task: Task<Void, Never>?
 
@@ -81,15 +82,16 @@ final class MemoryController: ObservableObject {
     func makeDraft(title: String, mood: MemoryMood, observation: String, keyMoment: String, delivery: MemoryDeliveryPlan) {
         let draft = MemoryDraft(id: UUID(), title: title.trimmingCharacters(in: .whitespacesAndNewlines), mood: mood, observation: observation.trimmingCharacters(in: .whitespacesAndNewlines), keyMoment: keyMoment.trimmingCharacters(in: .whitespacesAndNewlines), reviewState: .draft, deliveryPlan: delivery, deliveryState: .notScheduled, imageData: nil, createdAt: Date())
         drafts = [draft] + drafts
-        phase = .draft
     }
 
-    func updateDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id }; drafts.insert(draft, at: 0); phase = draft.reviewState }
-    func discardDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id }; phase = .draft }
+    func updateDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id }; drafts.insert(draft, at: 0) }
+    func discardDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id } }
 
     func generateImage(for draft: MemoryDraft) {
-        task?.cancel(); phase = .generating
-        var working = draft; working.reviewState = .generating; updateDraft(working)
+        guard draft.reviewState.isEditableDraftState else { return }
+        task?.cancel()
+        generationState = .generating
+        var working = draft
         let generator = imageGenerator
         task = Task { @MainActor [weak self] in
             do {
@@ -97,7 +99,12 @@ final class MemoryController: ObservableObject {
                 working.imageData = try await generator.generate(prompt: prompt)
                 working.reviewState = .ready
                 self?.updateDraft(working)
-            } catch { working.reviewState = .failed(error.localizedDescription); self?.updateDraft(working) }
+                self?.generationState = .idle
+            } catch {
+                working.reviewState = .failed(error.localizedDescription)
+                self?.updateDraft(working)
+                self?.generationState = .idle
+            }
         }
     }
 
@@ -107,9 +114,33 @@ final class MemoryController: ObservableObject {
         card.deliveryState = card.deliveryPlan == .archiveOnly ? .notScheduled : .scheduled
         cards = [card] + cards
         drafts.removeAll { $0.id == draft.id }
-        phase = .confirmed
     }
 
-    func markDelivered(_ card: MemoryDraft) { var copy = card; copy.reviewState = .confirmed; cards.removeAll { $0.id == card.id }; cards.insert(copy, at: 0) }
+    func archive(_ card: MemoryDraft) {
+        guard card.reviewState == .confirmed else { return }
+        var copy = card
+        copy.reviewState = .archived
+        updateCard(copy)
+    }
+
+    func restore(_ card: MemoryDraft) {
+        guard card.reviewState == .archived else { return }
+        var copy = card
+        copy.reviewState = .confirmed
+        updateCard(copy)
+    }
+
+    func markDelivered(_ card: MemoryDraft) { cards.removeAll { $0.id == card.id }; cards.insert(card, at: 0) }
     func updateCard(_ card: MemoryDraft) { cards.removeAll { $0.id == card.id }; cards.insert(card, at: 0) }
+}
+
+private extension MemoryReviewState {
+    var isEditableDraftState: Bool {
+        switch self {
+        case .draft, .failed:
+            return true
+        case .ready, .confirmed, .archived:
+            return false
+        }
+    }
 }

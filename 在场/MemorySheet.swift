@@ -16,9 +16,21 @@ struct MemorySheet: View {
     var body: some View {
         SheetContainer(eyebrow: "留声机", title: "把这一刻留下来", dismiss: dismiss) {
             if let draft = memory.drafts.first {
-                if draft.reviewState == .ready { cardView(draft) } else { draftFlow(draft) }
+                switch draft.reviewState {
+                case .ready:
+                    cardView(draft)
+                case .archived:
+                    archivedDraftView(draft)
+                default:
+                    draftFlow(draft)
+                }
             } else if let card = memory.cards.first {
-                cardView(card)
+                switch card.reviewState {
+                case .archived:
+                    archivedCardView(card)
+                default:
+                    cardView(card)
+                }
             } else {
                 inputForm
             }
@@ -45,8 +57,8 @@ struct MemorySheet: View {
             Text("心情：\(draft.mood.title)").foregroundStyle(Palette.muted)
             Text(draft.observation).font(.system(size: 12))
             Text("关键时刻：\(draft.keyMoment)").font(.system(size: 11)).foregroundStyle(Palette.muted)
-            Button { memory.generateImage(for: draft) } label: { Label("确认草稿并生成图像", systemImage: "photo.artframe").adaptiveFullWidthHitTarget(minHeight: 42) }.buttonStyle(.borderedProminent).disabled(draft.observation.isEmpty || draft.reviewState == .generating)
-            if case .generating = draft.reviewState { ProgressView("正在生成统一风格图像…") }
+            Button { memory.generateImage(for: draft) } label: { Label("确认草稿并生成图像", systemImage: "photo.artframe").adaptiveFullWidthHitTarget(minHeight: 42) }.buttonStyle(.borderedProminent).disabled(draft.observation.isEmpty || memory.generationState == .generating)
+            if memory.generationState == .generating { ProgressView("正在生成统一风格图像…") }
             if case let .failed(message) = draft.reviewState { Text(message).foregroundStyle(.red); Button("重试") { memory.generateImage(for: draft) } }
             Button("重新记录") { memory.discardDraft(draft) }.buttonStyle(.bordered)
         }
@@ -66,7 +78,45 @@ struct MemorySheet: View {
             Text(card.observation).font(.system(size: 12))
             Text("步骤 3 / 3 · 选择送达策略").font(.system(size: 12, weight: .semibold))
             ForEach(MemoryDeliveryPlan.allCases) { plan in Button { var x = card; x.deliveryPlan = plan; x.deliveryState = plan == .archiveOnly ? .notScheduled : .scheduled; memory.updateCard(x) } label: { Label(plan.title, systemImage: card.deliveryPlan == plan ? "checkmark.circle.fill" : "circle").adaptiveFullWidthHitTarget(minHeight: 34) }.buttonStyle(ZaichangPlainButtonStyle()) }
-            Button { memory.confirm(card); dismiss() } label: { Label(card.deliveryPlan == .archiveOnly ? "确认并保存到回忆" : "确认并进入待送达", systemImage: "paperplane").adaptiveFullWidthHitTarget(minHeight: 42) }.buttonStyle(.borderedProminent)
+            Button {
+                memory.confirm(card)
+                dismiss()
+            } label: {
+                Label(
+                    card.deliveryPlan == .archiveOnly ? "确认并保存到回忆" : "确认并进入待送达",
+                    systemImage: "paperplane"
+                )
+                .adaptiveFullWidthHitTarget(minHeight: 42)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private func archivedDraftView(_ draft: MemoryDraft) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("步骤 3 / 3 · 已归档草稿", systemImage: "archivebox").font(.system(size: 12, weight: .semibold))
+            Text(draft.title).font(.system(size: 18, weight: .semibold))
+            Text("这条草稿已保存为归档状态。")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.muted)
+            Button("恢复草稿") {
+                memory.restore(draft)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+    }
+
+    private func archivedCardView(_ card: MemoryDraft) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("记忆卡片 · 已归档", systemImage: "archivebox").font(.system(size: 12, weight: .semibold))
+            Text(card.title).font(.system(size: 18, weight: .semibold))
+            Text("这张卡片仍可恢复为已确认状态。")
+                .font(.system(size: 12))
+                .foregroundStyle(Palette.muted)
+            Button("恢复卡片") {
+                memory.restore(card)
+            }
+            .buttonStyle(.borderedProminent)
         }
     }
 }
