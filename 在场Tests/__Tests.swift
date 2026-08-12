@@ -142,6 +142,21 @@ struct AppModelTests {
         #expect(model.selectedScene.weatherEffect == .none)
     }
 
+    @Test("切换场景会更新渲染所需的场景资源")
+    @MainActor
+    func selectingSceneUpdatesRendererInputs() {
+        let model = AppModel()
+        let initialID = model.selectedScene.id
+        let initialPath = model.selectedSceneImage.relativePath
+
+        model.selectScene(RoomSceneCatalog.makeScene)
+
+        #expect(initialID != model.selectedScene.id)
+        #expect(initialPath != model.selectedSceneImage.relativePath)
+        #expect(model.selectedScene.id == RoomSceneCatalog.makeScene.id)
+        #expect(model.selectedSceneImage.relativePath == "Scenes/make.png")
+    }
+
     @Test("不支持天气的基础状态不会启用天气叠加层")
     @MainActor
     func unsupportedWeatherEffectStaysDisabled() {
