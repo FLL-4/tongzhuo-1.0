@@ -133,19 +133,98 @@ struct DeskPetSection: View {
 }
 
 struct DeskPetOverlay: View {
+    @ObservedObject var controller: DeskPetController
     let profile: DeskPetProfile
+    let onDoubleTap: () -> Void
 
     var body: some View {
         GeometryReader { geo in
             let size = min(geo.size.width, geo.size.height) * 0.22
             let clampedSize = min(max(size, 80), 200)
-            DeskPetImage(data: profile.generatedImageData)
-                .frame(width: clampedSize, height: clampedSize)
-                .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+            InteractiveDeskPetView(
+                controller: controller,
+                profile: profile,
+                size: clampedSize,
+                onDoubleTap: onDoubleTap
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        }
+    }
+}
+
+struct InteractiveDeskPetView: View {
+    @ObservedObject var controller: DeskPetController
+    let profile: DeskPetProfile
+    let size: CGFloat
+    let onDoubleTap: () -> Void
+    @State private var sentAnimationTrigger = 0
+
+    private var feedback: DeskPetNudgeFeedback? { controller.nudgeFeedback }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            DeskPetImage(data: profile.generatedImageData)
+                .frame(width: size, height: size)
+                .contentShape(Rectangle())
+                .shadow(
+                    color: feedback?.kind == .sent ? Palette.amber.opacity(0.85) : .black.opacity(0.35),
+                    radius: feedback?.kind == .sent ? 14 : 8,
+                    y: 4
+                )
+                .keyframeAnimator(
+                    initialValue: DeskPetNudgeMotion(),
+                    trigger: sentAnimationTrigger
+                ) { content, motion in
+                    content
+                        .scaleEffect(motion.scale)
+                        .rotationEffect(.degrees(motion.rotation))
+                } keyframes: { _ in
+                    KeyframeTrack(\.rotation) {
+                        LinearKeyframe(-7, duration: 0.08)
+                        LinearKeyframe(7, duration: 0.08)
+                        LinearKeyframe(-6, duration: 0.08)
+                        LinearKeyframe(6, duration: 0.08)
+                        LinearKeyframe(-3, duration: 0.08)
+                        LinearKeyframe(0, duration: 0.08)
+                    }
+                    KeyframeTrack(\.scale) {
+                        SpringKeyframe(1.07, duration: 0.16, spring: .snappy)
+                        SpringKeyframe(1, duration: 0.32, spring: .smooth)
+                    }
+                }
+                .onTapGesture(count: 2, perform: onDoubleTap)
+
+            if let feedback {
+                Text(feedback.message)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.black.opacity(0.76))
+                    .overlay(
+                        Capsule().stroke(
+                            feedback.kind == .sent ? Palette.amber.opacity(0.8) : Color.white.opacity(0.2)
+                        )
+                    )
+                    .clipShape(Capsule())
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .frame(width: size, height: size)
+        .animation(.spring(response: 0.24, dampingFraction: 0.58), value: feedback?.id)
+        .onChange(of: feedback?.id) { _, _ in
+            guard feedback?.kind == .sent else { return }
+            sentAnimationTrigger += 1
         }
         .accessibilityLabel("\(profile.partnerName)的桌宠")
     }
+}
+
+private struct DeskPetNudgeMotion {
+    var rotation = 0.0
+    var scale = 1.0
 }
 
 struct DeskPetImage: View {

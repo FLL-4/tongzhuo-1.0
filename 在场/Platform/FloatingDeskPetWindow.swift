@@ -15,13 +15,15 @@ final class FloatingDeskPetWindow {
     private var willMiniaturizeObserver: Any?
     private weak var mainWindow: NSWindow?
     private weak var controller: DeskPetController?
+    private var onDoubleTap: (() -> Void)?
 
     private init() {}
 
     // MARK: - Public
 
-    func setup(controller: DeskPetController) {
+    func setup(controller: DeskPetController, onDoubleTap: @escaping () -> Void) {
         self.controller = controller
+        self.onDoubleTap = onDoubleTap
 
         // 延迟获取主窗口（onAppear 时窗口可能还没就绪）
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -74,7 +76,12 @@ final class FloatingDeskPetWindow {
         let finalX = screenFrame.maxX - petSize - margin
         let finalY = screenFrame.minY + margin
 
-        let petView = FloatingDeskPetView(profile: profile, size: petSize)
+        let petView = FloatingDeskPetView(
+            controller: controller,
+            profile: profile,
+            size: petSize,
+            onDoubleTap: onDoubleTap ?? {}
+        )
 
         let panel = NSPanel(
             contentRect: NSRect(x: startPosition.x, y: startPosition.y, width: petSize, height: petSize),
@@ -202,13 +209,18 @@ final class FloatingDeskPetWindow {
 // MARK: - Floating Pet View
 
 private struct FloatingDeskPetView: View {
+    @ObservedObject var controller: DeskPetController
     let profile: DeskPetProfile
     let size: CGFloat
+    let onDoubleTap: () -> Void
 
     var body: some View {
-        DeskPetImage(data: profile.generatedImageData)
-            .frame(width: size, height: size)
-            .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
+        InteractiveDeskPetView(
+            controller: controller,
+            profile: profile,
+            size: size,
+            onDoubleTap: onDoubleTap
+        )
     }
 }
 #endif

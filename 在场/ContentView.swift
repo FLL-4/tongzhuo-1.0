@@ -21,7 +21,9 @@ struct ContentView: View {
             .frame(minWidth: 980, minHeight: 620)
             .onAppear {
                 model.activateAudio()
-                FloatingDeskPetWindow.shared.setup(controller: model.deskPet)
+                FloatingDeskPetWindow.shared.setup(controller: model.deskPet) { [weak model] in
+                    model?.nudgeDeskMate()
+                }
             }
 #else
             .onAppear { model.activateAudio() }
