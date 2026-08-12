@@ -5,6 +5,7 @@ import SwiftUI
 struct VoiceSheet: View {
     @ObservedObject var model: AppModel
     @ObservedObject var recorder: VoiceRecorderController
+    @ObservedObject var memory: MemoryController
     @Environment(\.dismiss) private var dismiss
     @State private var delivery: VoiceDelivery = .focusEnd
 
@@ -88,7 +89,8 @@ struct VoiceSheet: View {
             Button {
                 if recorder.saveDraft(delivery: delivery) != nil {
                     dismiss()
-                    model.showToast("留声会在“\(delivery.title)”抵达")
+                    model.showToast("语音已保存，继续整理为记忆卡片")
+                    model.activeSheet = .memory
                 }
             } label: {
                 Label("放进留声机", systemImage: "paperplane")

@@ -12,6 +12,43 @@ import Testing
 @Suite("在场 AppModel")
 struct AppModelTests {
 
+    @Test("记忆草稿生命周期与生成运行态彼此独立")
+    @MainActor
+    func memoryDraftLifecycleIsUnified() async throws {
+        let controller = MemoryController(imageGenerator: ImmediateMemoryImageGenerator())
+
+        controller.makeDraft(
+            title: "雨夜书桌",
+            mood: .quiet,
+            observation: "一起完成了一段专注",
+            keyMoment: "两盏灯同时亮着",
+            delivery: .archiveOnly
+        )
+
+        let draft = try #require(controller.drafts.first)
+        #expect(draft.reviewState == .draft)
+        #expect(controller.generationState == .idle)
+
+        controller.generateImage(for: draft)
+        #expect(controller.generationState == .generating)
+        #expect(controller.drafts.first?.reviewState == .draft)
+
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(controller.generationState == .idle)
+        #expect(controller.drafts.first?.reviewState == .ready)
+
+        let ready = try #require(controller.drafts.first)
+        controller.confirm(ready)
+        #expect(controller.cards.first?.reviewState == .confirmed)
+
+        let confirmed = try #require(controller.cards.first)
+        controller.archive(confirmed)
+        #expect(controller.cards.first?.reviewState == .archived)
+
+        controller.restore(try #require(controller.cards.first))
+        #expect(controller.cards.first?.reviewState == .confirmed)
+    }
+
     @Test("文本、图像和抠图配置彼此独立")
     func apiConfigurationParsesServiceSections() {
         let configuration = APIConfiguration.from(yaml: """
@@ -358,6 +395,12 @@ struct AppModelTests {
 
         #expect(model.activeSuggestion == nil)
         #expect(model.presence == .rest)
+    }
+}
+
+private struct ImmediateMemoryImageGenerator: MemoryImageGenerating {
+    func generate(prompt: String) async throws -> Data {
+        Data([0x89, 0x50, 0x4E, 0x47])
     }
 }
 

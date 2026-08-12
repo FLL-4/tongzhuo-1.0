@@ -26,9 +26,9 @@ struct AppShellView: View {
             case .desk:
                 DeskSheet(model: model)
             case .voice:
-                VoiceSheet(model: model, recorder: model.voiceRecorder)
+                VoiceSheet(model: model, recorder: model.voiceRecorder, memory: model.memory)
             case .memory:
-                MemorySheet()
+                MemorySheet(memory: model.memory)
             case .scenes:
                 ScenePickerSheet(model: model)
             case .sceneWorkshop:

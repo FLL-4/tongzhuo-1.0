@@ -203,8 +203,10 @@ final class AppModel: ObservableObject {
         FocusTask(title: "补齐方案最后两页", isCompleted: false),
         FocusTask(title: "给阿禾回一段留声", isCompleted: false),
     ]
+    @Published private(set) var dailyTodoCompletedAt: Date?
 
     let voiceRecorder: VoiceRecorderController
+    let memory: MemoryController
     let deskPet: DeskPetController
     let sceneGenerator: any SceneGenerating
 
@@ -229,6 +231,7 @@ final class AppModel: ObservableObject {
         self.sceneGenerator = sceneGenerator ?? HybridSceneGenerator()
         deskPet = DeskPetController(generator: deskPetGenerator ?? HybridDeskPetGenerator())
         voiceRecorder = VoiceRecorderController(ambientAudio: audio)
+        memory = MemoryController()
         timerEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
         timerTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
@@ -394,7 +397,14 @@ final class AppModel: ObservableObject {
         guard let index = tasks.firstIndex(where: { $0.id == taskID }) else { return }
         let wasCompleted = allTasksCompleted
         tasks[index].isCompleted.toggle()
-        if tasks[index].isCompleted { showToast("这件事已经收好了") }
+        if tasks[index].isCompleted {
+            showToast("这件事已经收好了")
+            if allTasksCompleted, dailyTodoCompletedAt == nil {
+                dailyTodoCompletedAt = Date()
+            }
+        } else {
+            dailyTodoCompletedAt = nil
+        }
         handleDailyTodoCompletionTransition(wasCompleted: wasCompleted)
     }
 
