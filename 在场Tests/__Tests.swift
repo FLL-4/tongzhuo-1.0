@@ -125,6 +125,35 @@ struct AppModelTests {
         #expect(controller.activeProfile == nil)
     }
 
+    @Test("桌宠生成结果会持久化并在下次启动恢复")
+    @MainActor
+    func deskPetPersistsGeneratedProfile() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("desk-pet-\(UUID().uuidString)", isDirectory: true)
+        let persistence = DeskPetPersistence(directoryURL: directory)
+        let generatedData = Data([0x89, 0x50, 0x4E, 0x47])
+
+        let controller = DeskPetController(
+            generator: ImmediateDeskPetGenerator(result: generatedData),
+            persistence: persistence
+        )
+        controller.selectPhoto(Data([0x01]), for: .ahe)
+        controller.generate()
+        try await Task.sleep(for: .milliseconds(20))
+        controller.setEnabled(true)
+
+        let restored = DeskPetController(
+            generator: ImmediateDeskPetGenerator(),
+            persistence: persistence
+        )
+        #expect(restored.profile?.partnerID == DeskPartner.ahe.id)
+        #expect(restored.profile?.generatedImageData == generatedData)
+        #expect(restored.profile?.isEnabled == true)
+
+        restored.clear()
+        #expect(persistence.load() == nil)
+    }
+
 #if os(macOS)
     @Test("主窗口最小化时桌宠进入浮动状态，窗口关闭时清理")
     @MainActor
@@ -456,7 +485,13 @@ private struct ImmediateMemoryImageGenerator: MemoryImageGenerating {
 }
 
 private struct ImmediateDeskPetGenerator: DeskPetGenerating {
-    func generate(photoData: Data, partnerName: String) async throws -> Data { photoData }
+    let result: Data?
+
+    init(result: Data? = nil) { self.result = result }
+
+    func generate(photoData: Data, partnerName: String) async throws -> Data {
+        result ?? photoData
+    }
 }
 
 @Suite("场景生成契约")

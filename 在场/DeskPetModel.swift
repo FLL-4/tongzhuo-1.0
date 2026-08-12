@@ -88,6 +88,92 @@ struct DeskPetProfile: Equatable, Identifiable {
     }
 }
 
+private struct PersistedDeskPetRecord: Codable, Equatable {
+    static let currentVersion = 1
+
+    let version: Int
+    let id: UUID
+    let partnerID: UUID
+    let partnerName: String
+    let generatedImageFilename: String
+    var isEnabled: Bool
+}
+
+/// Persists only the generated desk-pet asset and the metadata needed to restore it.
+/// The selected friend photo is intentionally kept session-only.
+final class DeskPetPersistence {
+    private let fileManager: FileManager
+    private let directoryURL: URL
+
+    init(
+        directoryURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) {
+        self.fileManager = fileManager
+        self.directoryURL = directoryURL ?? Self.defaultDirectory(fileManager: fileManager)
+    }
+
+    func load() -> DeskPetProfile? {
+        let recordURL = directoryURL.appendingPathComponent("profile.json")
+        guard
+            let recordData = try? Data(contentsOf: recordURL),
+            let record = try? JSONDecoder().decode(PersistedDeskPetRecord.self, from: recordData),
+            record.version == PersistedDeskPetRecord.currentVersion,
+            let imageData = try? Data(
+                contentsOf: directoryURL.appendingPathComponent(record.generatedImageFilename)
+            ),
+            !imageData.isEmpty
+        else { return nil }
+
+        return DeskPetProfile(
+            id: record.id,
+            partnerID: record.partnerID,
+            partnerName: record.partnerName,
+            sourceImageData: Data(),
+            generatedImageData: imageData,
+            isEnabled: record.isEnabled
+        )
+    }
+
+    func save(_ profile: DeskPetProfile) throws {
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+
+        let imageFilename = "generated-\(profile.id.uuidString).png"
+        let imageURL = directoryURL.appendingPathComponent(imageFilename)
+        let recordURL = directoryURL.appendingPathComponent("profile.json")
+        let record = PersistedDeskPetRecord(
+            version: PersistedDeskPetRecord.currentVersion,
+            id: profile.id,
+            partnerID: profile.partnerID,
+            partnerName: profile.partnerName,
+            generatedImageFilename: imageFilename,
+            isEnabled: profile.isEnabled
+        )
+
+        try profile.generatedImageData.write(to: imageURL, options: .atomic)
+        try JSONEncoder().encode(record).write(to: recordURL, options: .atomic)
+        try removeObsoleteImages(except: imageFilename)
+    }
+
+    func remove() throws {
+        guard fileManager.fileExists(atPath: directoryURL.path) else { return }
+        try fileManager.removeItem(at: directoryURL)
+    }
+
+    private func removeObsoleteImages(except filename: String) throws {
+        guard let files = try? fileManager.contentsOfDirectory(atPath: directoryURL.path) else { return }
+        for file in files where file.hasPrefix("generated-") && file.hasSuffix(".png") && file != filename {
+            try fileManager.removeItem(at: directoryURL.appendingPathComponent(file))
+        }
+    }
+
+    private static func defaultDirectory(fileManager: FileManager) -> URL {
+        fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Zaichang", isDirectory: true)
+            .appendingPathComponent("DeskPets", isDirectory: true)
+    }
+}
+
 protocol DeskPetGenerating {
     func generate(photoData: Data, partnerName: String) async throws -> Data
 }
@@ -334,12 +420,24 @@ final class DeskPetController: ObservableObject {
     @Published var isFloating: Bool = false
 
     private let generator: any DeskPetGenerating
+    private let persistence: DeskPetPersistence
     private var pendingPhotoData: Data?
     private var pendingPartner: DeskPartner?
     private var generationTask: Task<Void, Never>?
 
     init(generator: any DeskPetGenerating) {
         self.generator = generator
+        self.persistence = DeskPetPersistence()
+        restorePersistedProfile()
+    }
+
+    init(
+        generator: any DeskPetGenerating,
+        persistence: DeskPetPersistence
+    ) {
+        self.generator = generator
+        self.persistence = persistence
+        restorePersistedProfile()
     }
 
     convenience init() {
@@ -359,6 +457,11 @@ final class DeskPetController: ObservableObject {
             clear()
             return
         }
+        if profile?.partnerID == partner.id {
+            pendingPartner = partner
+            if state == .idle { state = .ready }
+            return
+        }
         if pendingPartner?.id != partner.id || profile?.partnerID != partner.id {
             clear()
         }
@@ -366,6 +469,7 @@ final class DeskPetController: ObservableObject {
 
     func selectPhoto(_ data: Data, for partner: DeskPartner) {
         generationTask?.cancel()
+        try? persistence.remove()
         pendingPhotoData = data
         pendingPartner = partner
         profile = nil
@@ -385,7 +489,7 @@ final class DeskPetController: ObservableObject {
                     partnerName: pendingPartner.name
                 )
                 guard let self, !Task.isCancelled else { return }
-                profile = DeskPetProfile(
+                let generatedProfile = DeskPetProfile(
                     id: UUID(),
                     partnerID: pendingPartner.id,
                     partnerName: pendingPartner.name,
@@ -393,6 +497,8 @@ final class DeskPetController: ObservableObject {
                     generatedImageData: generated,
                     isEnabled: false
                 )
+                profile = generatedProfile
+                try? persistence.save(generatedProfile)
                 state = .ready
             } catch is CancellationError {
                 // Replacing a photo or leaving the room cancels the old job.
@@ -406,6 +512,7 @@ final class DeskPetController: ObservableObject {
     func setEnabled(_ enabled: Bool) {
         guard profile != nil else { return }
         profile?.isEnabled = enabled
+        persistCurrentProfile()
     }
 
     func clear() {
@@ -415,6 +522,18 @@ final class DeskPetController: ObservableObject {
         pendingPartner = nil
         profile = nil
         state = .idle
+        try? persistence.remove()
+    }
+
+    private func restorePersistedProfile() {
+        guard let restored = persistence.load() else { return }
+        profile = restored
+        state = .ready
+    }
+
+    private func persistCurrentProfile() {
+        guard let profile else { return }
+        try? persistence.save(profile)
     }
 
     deinit {
