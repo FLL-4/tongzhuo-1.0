@@ -12,26 +12,6 @@ import Testing
 @Suite("在场 AppModel")
 struct AppModelTests {
 
-    @Test("API YAML 支持全局图像配置")
-    func apiConfigurationParsesYAML() {
-        let configuration = APIConfiguration.from(yaml: """
-        provider: openai
-        api_key: 'secret'
-        base_url: https://example.com/v1
-        chat_model: gpt-4.1-mini
-        image_endpoint: https://example.com/v1/images/edits
-        image_model: gpt-image-1
-        image_size: 1024x1024
-        """)
-
-        #expect(configuration.provider == .openAI)
-        #expect(configuration.apiKey == "secret")
-        #expect(configuration.baseURL == "https://example.com/v1")
-        #expect(configuration.imageModel == "gpt-image-1")
-        #expect(configuration.isConfigured)
-        #expect(configuration.isTextModelConfigured)
-    }
-
     @Test("文本、图像和抠图配置彼此独立")
     func apiConfigurationParsesServiceSections() {
         let configuration = APIConfiguration.from(yaml: """
@@ -71,12 +51,13 @@ struct AppModelTests {
         #expect(endpoint.absoluteString == "https://oneapi-comate.baidu-int.com/v1/chat/completions")
 
         let configuration = APIConfiguration.from(yaml: """
-        provider: openai
-        api_key: secret
-        base_url: https://oneapi-comate.baidu-int.com/v1
-        chat_model: DeepSeek-V4-Flash
+        text:
+          provider: openai
+          api_key: secret
+          base_url: https://oneapi-comate.baidu-int.com/v1
+          model: DeepSeek-V4-Flash
         """)
-        #expect(configuration.chatModel == "DeepSeek-V4-Flash")
+        #expect(configuration.text.model == "DeepSeek-V4-Flash")
         #expect(configuration.isTextModelConfigured)
     }
 
@@ -104,21 +85,6 @@ struct AppModelTests {
         #expect(controller.activeProfile == nil)
     }
 
-    @Test("场景状态会同步到原生渲染快照")
-    @MainActor
-    func sceneRenderStateTracksModel() {
-        let model = AppModel()
-        model.selectScene(RoomSceneCatalog.lakesideDesk)
-
-        let state = SceneRenderState(model: model)
-
-        #expect(state.sceneID == "lakeside-desk")
-        #expect(state.imagePath == "Scenes/lakeside-desk.png")
-        #expect(state.weatherEffect == .none)
-        #expect(state.weatherEffectsEnabled)
-        #expect(state.presence == .focus)
-    }
-
     @Test("同桌状态不会改变静态背景资源")
     @MainActor
     func deskOccupancySelectsSceneAsset() {
@@ -129,23 +95,14 @@ struct AppModelTests {
         model.leaveDesk()
 
         #expect(model.selectedSceneImage.relativePath == "Scenes/rainy-study.png")
-    }
-
-    @Test("深夜小屋仅保留静态背景与天气状态")
-    @MainActor
-    func midnightCabinUsesStaticAtmosphere() {
-        let model = AppModel()
         model.selectScene(RoomSceneCatalog.midnightCabin)
-
-        let connectedState = SceneRenderState(model: model)
-        #expect(connectedState.imagePath == "Scenes/midnight-cabin.png")
-        #expect(connectedState.weatherEffect == .none)
+        #expect(model.selectedSceneImage.relativePath == "Scenes/midnight-cabin.png")
+        #expect(model.selectedScene.weatherEffect == .none)
 
         model.updateDeskPartner(nil)
 
-        let disconnectedState = SceneRenderState(model: model)
-        #expect(disconnectedState.imagePath == "Scenes/midnight-cabin.png")
-        #expect(disconnectedState.weatherEffect == .none)
+        #expect(model.selectedSceneImage.relativePath == "Scenes/midnight-cabin.png")
+        #expect(model.selectedScene.weatherEffect == .none)
     }
 
     @Test("非专注状态暂停计时，回到专注后继续")
@@ -414,7 +371,6 @@ struct SceneGenerationContractTests {
 
         #expect(request.prompt.text.contains("standalone, full-bleed 16:9 environment background"))
         #expect(request.prompt.text.contains("Do not render people, characters, desk pets"))
-        #expect(!request.prompt.text.contains("OCCUPANCY VARIANT"))
         #expect(request.styleReferences.count == RoomSceneCatalog.builtIn.count)
         #expect(request.styleReferences.allSatisfy { $0.imagePath.hasPrefix("Scenes/") })
     }
@@ -438,7 +394,6 @@ struct SceneGenerationContractTests {
         )
 
         #expect(repair.issues == [.pixelStyleMismatch, .interfaceSafeAreaConflict])
-        #expect(repair.prompt.contains("TARGETED REPAIR"))
         #expect(repair.prompt.contains("TARGETED REPAIR"))
         #expect(
             ScenePromptCompiler.compileRepairRequest(

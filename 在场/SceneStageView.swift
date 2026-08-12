@@ -23,7 +23,7 @@ struct SceneStageView: View {
 
     var body: some View {
         ZStack {
-            SceneNativeRenderer(model: model, layout: layout)
+            SceneNativeRenderer(model: model)
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(model.selectedScene.eyebrow)
