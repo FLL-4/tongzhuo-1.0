@@ -351,7 +351,7 @@ private struct RemoteSceneGenerator: SceneGenerating {
             image: GeneratedSceneImage(
                 relativePath: relativePath,
                 canvas: SceneGenerationContract.canvas,
-                metadata: SceneImageMetadata(accessibilityDescription: "(request.spec.name)的静态像素背景")
+                metadata: SceneImageMetadata(accessibilityDescription: "\(request.spec.name)的静态像素背景")
             ),
             review: SceneGenerationReview(
                 pixelStyleConsistent: true,
@@ -493,7 +493,7 @@ enum SceneGenerationError: LocalizedError {
         switch self {
         case .invalidEndpoint: "场景图像接口地址无效。"
         case .invalidResponse: "场景图像接口没有返回可用图片。"
-        case .remote(let message): "场景图像接口请求失败：(message.prefix(180))"
+        case .remote(let message): "场景图像接口请求失败：\(message.prefix(180))"
         }
     }
 }

@@ -171,7 +171,7 @@ struct RemoteDeskPetGenerator: DeskPetGenerating {
     }
 
     private func extractImage(from data: Data) async throws -> Data? {
-        guard let object = try JSONSerialization.jsonObject(with: data) as? Any else { return nil }
+        let object = try JSONSerialization.jsonObject(with: data)
         if let base64 = findString(in: object, keys: ["b64_json", "base64", "image_base64"]) {
             return Data(base64Encoded: base64)
         }
@@ -269,8 +269,12 @@ final class DeskPetController: ObservableObject {
     private var pendingPartner: DeskPartner?
     private var generationTask: Task<Void, Never>?
 
-    init(generator: any DeskPetGenerating = HybridDeskPetGenerator()) {
+    init(generator: any DeskPetGenerating) {
         self.generator = generator
+    }
+
+    convenience init() {
+        self.init(generator: HybridDeskPetGenerator())
     }
 
     var activeProfile: DeskPetProfile? {

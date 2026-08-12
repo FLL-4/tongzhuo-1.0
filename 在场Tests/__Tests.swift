@@ -575,7 +575,8 @@ struct SceneWorkshopTests {
         let result = try #require(workshop.result)
         #expect(workshop.step == .preview)
         #expect(result.review.isApproved)
-        #expect(result.image.relativePath.hasSuffix("snowy-train.png"))
+        #expect(result.image.relativePath == SceneGenerationContract.relativeImagePath(sceneID: result.sceneID))
+        #expect(result.image.relativePath.hasPrefix("Scenes/"))
 
         let scene = try #require(workshop.generatedScene())
         #expect(scene.origin == .generated)
