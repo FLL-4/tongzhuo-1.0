@@ -136,23 +136,15 @@ struct DeskPetOverlay: View {
     let profile: DeskPetProfile
 
     var body: some View {
-        HStack(spacing: 8) {
+        GeometryReader { geo in
+            let size = min(geo.size.width, geo.size.height) * 0.22
+            let clampedSize = min(max(size, 80), 200)
             DeskPetImage(data: profile.generatedImageData)
-                .frame(width: 54, height: 54)
-                .background(Color.black.opacity(0.26))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(profile.partnerName).font(.system(size: 10, weight: .semibold))
-                Text("桌宠在这里").font(.system(size: 9)).foregroundStyle(Palette.muted)
-            }
+                .frame(width: clampedSize, height: clampedSize)
+                .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
-        .padding(7)
-        .background(.black.opacity(0.68))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white.opacity(0.16)))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("(profile.partnerName)的桌宠")
+        .accessibilityLabel("\(profile.partnerName)的桌宠")
     }
 }
 
@@ -161,14 +153,14 @@ struct DeskPetImage: View {
 
     var body: some View {
 #if os(macOS)
-        if let image = NSImage(data: data) {
-            Image(nsImage: image).resizable().scaledToFit()
+        if let nsImage = NSImage(data: data) {
+            Image(nsImage: nsImage).resizable().scaledToFit()
         } else {
             fallback
         }
 #elseif os(iOS) || os(visionOS)
-        if let image = UIImage(data: data) {
-            Image(uiImage: image).resizable().scaledToFit()
+        if let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage).resizable().scaledToFit()
         } else {
             fallback
         }
