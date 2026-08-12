@@ -30,6 +30,7 @@ struct SceneNativeRenderer: View {
                 isEnabled: model.weatherEffectsEnabled
             )
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
 }
