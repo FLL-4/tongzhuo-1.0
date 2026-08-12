@@ -391,20 +391,47 @@ private struct SceneControlsView: View {
             .padding(.horizontal, 5)
             .liquidSceneControl()
 
-            SceneIconButton(
-                symbol: "cloud.sun",
-                isOn: model.weatherEffectsEnabled,
-                onColor: Palette.blue,
-                help: "窗外天气",
-                action: model.toggleWeather
-            )
-            SceneIconButton(
-                symbol: model.ambientEnabled ? "speaker.wave.2" : "speaker.slash",
-                isOn: model.ambientEnabled,
-                onColor: Palette.blue,
-                help: model.selectedScene.ambientPreset.displayName,
-                action: model.toggleAmbient
-            )
+            if model.supportsWeatherEffects {
+                SceneIconButton(
+                    symbol: "cloud.sun",
+                    isOn: model.weatherEffectsEnabled,
+                    onColor: Palette.blue,
+                    help: "窗外天气",
+                    action: model.toggleWeather
+                )
+            }
+            Menu {
+                Button {
+                    model.toggleAmbient()
+                } label: {
+                    Label(
+                        model.ambientEnabled ? "关闭环境声音" : "打开环境声音",
+                        systemImage: model.ambientEnabled ? "speaker.slash" : "speaker.wave.2"
+                    )
+                }
+                Divider()
+                ForEach(model.availableAmbientPresets, id: \.self) { preset in
+                    Button {
+                        model.selectAmbientPreset(preset)
+                    } label: {
+                        if preset == model.selectedScene.ambientPreset {
+                            Label(preset.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(preset.displayName)
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: model.ambientEnabled ? "speaker.wave.2" : "speaker.slash")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(model.ambientEnabled ? Palette.blue : Color.gray)
+                    .frame(width: 46, height: 46)
+                    .liquidSceneControl()
+            }
+            .buttonStyle(ZaichangPlainButtonStyle())
+            .menuIndicator(.hidden)
+            .help("选择环境声音")
+            .accessibilityLabel("选择环境声音")
         }
     }
 
@@ -451,11 +478,25 @@ private struct SceneControlsView: View {
             .liquidSceneControl()
 
             Menu {
-                Toggle(isOn: binding(for: \AppModel.weatherEffectsEnabled, toggle: model.toggleWeather)) {
-                    Label("窗外天气", systemImage: "cloud.sun")
+                if model.supportsWeatherEffects {
+                    Toggle(isOn: binding(for: \AppModel.weatherEffectsEnabled, toggle: model.toggleWeather)) {
+                        Label("窗外天气", systemImage: "cloud.sun")
+                    }
                 }
                 Toggle(isOn: binding(for: \AppModel.ambientEnabled, toggle: model.toggleAmbient)) {
                     Label(model.selectedScene.ambientPreset.displayName, systemImage: "speaker.wave.2")
+                }
+                Divider()
+                ForEach(model.availableAmbientPresets, id: \.self) { preset in
+                    Button {
+                        model.selectAmbientPreset(preset)
+                    } label: {
+                        if preset == model.selectedScene.ambientPreset {
+                            Label(preset.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(preset.displayName)
+                        }
+                    }
                 }
             } label: {
                 Image(systemName: "slider.horizontal.3")

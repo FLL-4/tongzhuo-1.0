@@ -12,7 +12,7 @@ struct ScenePickerSheet: View {
     ]
 
     var body: some View {
-        SheetContainer(eyebrow: "场景", title: "今晚住在哪里", dismiss: dismiss) {
+        SheetContainer(eyebrow: "基础状态", title: "这一段想怎么度过", dismiss: dismiss) {
             LazyVGrid(
                 columns: columns,
                 spacing: 10
@@ -24,6 +24,7 @@ struct ScenePickerSheet: View {
                     } label: {
                         ScenePickerCard(
                             title: scene.name,
+                            subtitle: scene.activityState?.detail,
                             isGenerated: scene.origin == .generated,
                             isSelected: model.selectedSceneID == scene.id
                         ) {
@@ -58,17 +59,20 @@ struct ScenePickerSheet: View {
 
 private struct ScenePickerCard<Preview: View>: View {
     let title: String
+    let subtitle: String?
     let isGenerated: Bool
     let isSelected: Bool
     @ViewBuilder let preview: Preview
 
     init(
         title: String,
+        subtitle: String? = nil,
         isGenerated: Bool = false,
         isSelected: Bool = false,
         @ViewBuilder preview: () -> Preview
     ) {
         self.title = title
+        self.subtitle = subtitle
         self.isGenerated = isGenerated
         self.isSelected = isSelected
         self.preview = preview()
@@ -82,9 +86,17 @@ private struct ScenePickerCard<Preview: View>: View {
                 .clipped()
 
             HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 10, weight: .medium))
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 8))
+                            .foregroundStyle(Palette.muted)
+                            .lineLimit(1)
+                    }
+                }
 
                 if isGenerated {
                     Image(systemName: "wand.and.stars")
@@ -101,7 +113,7 @@ private struct ScenePickerCard<Preview: View>: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: 40)
+            .frame(height: 46)
         }
         .frame(maxWidth: .infinity)
         .background(Palette.surface3)

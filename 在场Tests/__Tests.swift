@@ -90,19 +90,32 @@ struct AppModelTests {
     func deskOccupancySelectsSceneAsset() {
         let model = AppModel()
 
-        #expect(model.selectedSceneImage.relativePath == "Scenes/rainy-study.png")
+        #expect(model.selectedSceneImage.relativePath == "Scenes/focus.png")
 
         model.leaveDesk()
 
-        #expect(model.selectedSceneImage.relativePath == "Scenes/rainy-study.png")
-        model.selectScene(RoomSceneCatalog.midnightCabin)
-        #expect(model.selectedSceneImage.relativePath == "Scenes/midnight-cabin.png")
+        #expect(model.selectedSceneImage.relativePath == "Scenes/focus.png")
+        model.selectScene(RoomSceneCatalog.roamScene)
+        #expect(model.selectedSceneImage.relativePath == "Scenes/roam.png")
         #expect(model.selectedScene.weatherEffect == .none)
 
         model.updateDeskPartner(nil)
 
-        #expect(model.selectedSceneImage.relativePath == "Scenes/midnight-cabin.png")
+        #expect(model.selectedSceneImage.relativePath == "Scenes/roam.png")
         #expect(model.selectedScene.weatherEffect == .none)
+    }
+
+    @Test("不支持天气的基础状态不会启用天气叠加层")
+    @MainActor
+    func unsupportedWeatherEffectStaysDisabled() {
+        let model = AppModel()
+
+        model.selectScene(RoomSceneCatalog.moveScene)
+        let previousValue = model.weatherEffectsEnabled
+        model.toggleWeather()
+
+        #expect(!model.supportsWeatherEffects)
+        #expect(model.weatherEffectsEnabled == previousValue)
     }
 
     @Test("非专注状态暂停计时，回到专注后继续")
@@ -190,12 +203,12 @@ struct AppModelTests {
         let model = AppModel(ambientAudio: audio)
 
         model.activateAudio()
-        model.selectScene(RoomSceneCatalog.midnightCabin)
+        model.selectScene(RoomSceneCatalog.roamScene)
         model.deactivateAudio()
 
         #expect(audio.commands == [
             .start(.rain, true),
-            .preset(.fireplace),
+            .preset(.forest),
             .stop,
         ])
     }
@@ -360,9 +373,15 @@ struct SceneGenerationContractTests {
     func packagedScenePathsAreStable() {
         #expect(SceneGenerationContract.canvas == SceneCanvas(width: 1_920, height: 1_080, format: .png))
         #expect(RoomSceneCatalog.builtIn.allSatisfy { SceneGenerationContract.isValidSceneID($0.id) })
+        #expect(RoomSceneCatalog.states.map(\.id) == ["focus", "make", "move", "roam"])
+        #expect(RoomSceneCatalog.builtIn.map(\.id) == RoomSceneCatalog.states.map(\.id))
 
-        let scene = RoomSceneCatalog.rainyStudy
-        #expect(scene.image.relativePath == "Scenes/rainy-study.png")
+        let scene = RoomSceneCatalog.focusScene
+        #expect(scene.image.relativePath == "Scenes/focus.png")
+        #expect(scene.activityState?.ambientPresets == [.quiet, .rain])
+        #expect(RoomSceneCatalog.make.ambientPresets == [.quiet, .fireplace])
+        #expect(RoomSceneCatalog.move.availableEffects == [.none])
+        #expect(RoomSceneCatalog.roam.defaultAmbientPreset == .forest)
     }
 
     @Test("生成请求固定编译一份纯背景 Prompt")
@@ -547,7 +566,7 @@ private struct ImmediateSceneGenerator: SceneGenerating {
         progress(.generating)
         progress(.reviewing)
 
-        let template = RoomSceneCatalog.lakesideDesk
+        let template = RoomSceneCatalog.makeScene
         return SceneGenerationResult(
             requestID: request.id,
             sceneID: request.spec.sceneID,

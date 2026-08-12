@@ -186,7 +186,7 @@ final class AppModel: ObservableObject {
     static let maximumTaskTitleLength = 30
 
     @Published private(set) var scenes = RoomSceneCatalog.builtIn
-    @Published private(set) var selectedSceneID = RoomSceneCatalog.rainyStudy.id
+    @Published private(set) var selectedSceneID = RoomSceneCatalog.focusScene.id
     @Published var presence: PresenceMode = .focus
     @Published var weatherEffectsEnabled = true
     @Published var ambientEnabled = true
@@ -259,11 +259,42 @@ final class AppModel: ObservableObject {
     var currentDeskPartner: DeskPartner? { currentDeskRoom?.partner }
     var deskActionTitle: String { currentDeskRoom == nil ? "加入同桌" : "邀请同桌" }
     var selectedScene: RoomScene {
-        scenes.first(where: { $0.id == selectedSceneID }) ?? RoomSceneCatalog.rainyStudy
+        scenes.first(where: { $0.id == selectedSceneID }) ?? RoomSceneCatalog.focusScene
     }
 
     var selectedSceneImage: SceneImageAsset {
         selectedScene.image
+    }
+
+    var availableAmbientPresets: [AmbientPreset] {
+        selectedScene.activityState?.ambientPresets ?? AmbientPreset.allCases
+    }
+
+    var supportsWeatherEffects: Bool {
+        selectedScene.activityState?.availableEffects.contains(where: { $0 != .none })
+            ?? (selectedScene.weatherEffect != .none)
+    }
+
+    func selectAmbientPreset(_ preset: AmbientPreset) {
+        guard availableAmbientPresets.contains(preset) else { return }
+        guard let index = scenes.firstIndex(where: { $0.id == selectedSceneID }) else { return }
+        let scene = scenes[index]
+        scenes[index] = RoomScene(
+            id: scene.id,
+            origin: scene.origin,
+            name: scene.name,
+            eyebrow: scene.eyebrow,
+            headline: scene.headline,
+            image: scene.image,
+            ambientPreset: preset,
+            weatherEffect: scene.weatherEffect,
+            promptVersion: scene.promptVersion,
+            activityState: scene.activityState
+        )
+        if audioActivated {
+            ambientAudio.setPreset(preset)
+        }
+        showToast("已换成\(preset.displayName)")
     }
 
     func selectScene(_ scene: RoomScene) {
@@ -345,6 +376,7 @@ final class AppModel: ObservableObject {
     }
 
     func toggleWeather() {
+        guard supportsWeatherEffects else { return }
         weatherEffectsEnabled.toggle()
         showToast(weatherEffectsEnabled ? "窗外天气已打开" : "窗外天气已关闭")
     }
