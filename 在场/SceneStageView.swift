@@ -23,7 +23,7 @@ struct SceneStageView: View {
 
     var body: some View {
         ZStack {
-            SceneNativeRenderer(model: model, layout: layout)
+            SceneNativeRenderer(model: model)
 
             VStack(alignment: .leading, spacing: 7) {
                 Text(model.selectedScene.eyebrow)
@@ -125,9 +125,8 @@ struct SceneStageView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            if let profile = deskPet.activeProfile {
+            if let profile = deskPet.activeProfile, !deskPet.isFloating {
                 DeskPetOverlay(profile: profile)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, layout == .compact ? 14 : 22)
                     .padding(.bottom, 84 + bottomInset)
                     .transition(.scale.combined(with: .opacity))

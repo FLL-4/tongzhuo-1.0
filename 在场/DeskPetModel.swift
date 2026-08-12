@@ -1,6 +1,8 @@
 import Foundation
 import Combine
 
+// MARK: - Generation State
+
 enum DeskPetGenerationState: Equatable {
     case idle
     case photoSelected
@@ -9,6 +11,56 @@ enum DeskPetGenerationState: Equatable {
     case failed(String)
 }
 
+// MARK: - Base Class
+
+/// 桌宠数据基类，所有桌宠类型继承此类
+class DeskPetBase: Equatable, Identifiable, ObservableObject {
+    let id: UUID
+    let imageData: Data
+    @Published var isEnabled: Bool
+
+    init(id: UUID = UUID(), imageData: Data, isEnabled: Bool = false) {
+        self.id = id
+        self.imageData = imageData
+        self.isEnabled = isEnabled
+    }
+
+    static func == (lhs: DeskPetBase, rhs: DeskPetBase) -> Bool {
+        lhs.id == rhs.id && lhs.imageData == rhs.imageData && lhs.isEnabled == rhs.isEnabled
+    }
+}
+
+/// 好友桌宠，从好友照片生成
+final class FriendDeskPet: DeskPetBase {
+    let partnerID: DeskPartner.ID
+    let partnerName: String
+    let sourceImageData: Data
+
+    init(
+        id: UUID = UUID(),
+        partnerID: DeskPartner.ID,
+        partnerName: String,
+        sourceImageData: Data,
+        generatedImageData: Data,
+        isEnabled: Bool = false
+    ) {
+        self.partnerID = partnerID
+        self.partnerName = partnerName
+        self.sourceImageData = sourceImageData
+        super.init(id: id, imageData: generatedImageData, isEnabled: isEnabled)
+    }
+
+    static func == (lhs: FriendDeskPet, rhs: FriendDeskPet) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.partnerID == rhs.partnerID &&
+        lhs.imageData == rhs.imageData &&
+        lhs.isEnabled == rhs.isEnabled
+    }
+}
+
+// MARK: - Legacy Compatibility
+
+/// 保持现有 API 兼容，将逐步迁移
 struct DeskPetProfile: Equatable, Identifiable {
     let id: UUID
     let partnerID: DeskPartner.ID
@@ -16,6 +68,24 @@ struct DeskPetProfile: Equatable, Identifiable {
     let sourceImageData: Data
     let generatedImageData: Data
     var isEnabled: Bool
+
+    init(id: UUID, partnerID: DeskPartner.ID, partnerName: String, sourceImageData: Data, generatedImageData: Data, isEnabled: Bool) {
+        self.id = id
+        self.partnerID = partnerID
+        self.partnerName = partnerName
+        self.sourceImageData = sourceImageData
+        self.generatedImageData = generatedImageData
+        self.isEnabled = isEnabled
+    }
+
+    init(from pet: FriendDeskPet) {
+        self.id = pet.id
+        self.partnerID = pet.partnerID
+        self.partnerName = pet.partnerName
+        self.sourceImageData = pet.sourceImageData
+        self.generatedImageData = pet.imageData
+        self.isEnabled = pet.isEnabled
+    }
 }
 
 protocol DeskPetGenerating {
@@ -46,12 +116,10 @@ struct HybridDeskPetGenerator: DeskPetGenerating {
         }
         let generated = try await RemoteDeskPetGenerator(configuration: configuration)
             .generate(photoData: photoData, partnerName: partnerName)
-        guard configuration.matting.isConfigured else { return generated }
 
-        // Matting is optional post-processing. A failed service must not
-        // discard a successful, potentially billable image generation result.
-        return (try? await RemoteMattingClient(configuration: configuration.matting)
-            .removeBackground(from: generated)) ?? generated
+        // 抠图，确保透明背景
+        return try await RemoteMattingClient(configuration: configuration.matting)
+            .removeBackground(from: generated)
     }
 }
 
@@ -263,6 +331,7 @@ enum DeskPetError: LocalizedError {
 final class DeskPetController: ObservableObject {
     @Published private(set) var state: DeskPetGenerationState = .idle
     @Published private(set) var profile: DeskPetProfile?
+    @Published var isFloating: Bool = false
 
     private let generator: any DeskPetGenerating
     private var pendingPhotoData: Data?
