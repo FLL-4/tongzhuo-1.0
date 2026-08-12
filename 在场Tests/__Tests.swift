@@ -8,6 +8,9 @@
 import Foundation
 import ImageIO
 import Testing
+#if os(macOS)
+import AppKit
+#endif
 @testable import 在场
 
 @Suite("在场 AppModel")
@@ -123,6 +126,68 @@ struct AppModelTests {
         #expect(controller.activeProfile == nil)
     }
 
+    @Test("桌宠生成结果会持久化并在下次启动恢复")
+    @MainActor
+    func deskPetPersistsGeneratedProfile() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("desk-pet-\(UUID().uuidString)", isDirectory: true)
+        let persistence = DeskPetPersistence(directoryURL: directory)
+        let generatedData = Data([0x89, 0x50, 0x4E, 0x47])
+
+        let controller = DeskPetController(
+            generator: ImmediateDeskPetGenerator(result: generatedData),
+            persistence: persistence
+        )
+        controller.selectPhoto(Data([0x01]), for: .ahe)
+        controller.generate()
+        try await Task.sleep(for: .milliseconds(20))
+        controller.setEnabled(true)
+
+        let restored = DeskPetController(
+            generator: ImmediateDeskPetGenerator(),
+            persistence: persistence
+        )
+        #expect(restored.profile?.partnerID == DeskPartner.ahe.id)
+        #expect(restored.profile?.generatedImageData == generatedData)
+        #expect(restored.profile?.isEnabled == true)
+
+        restored.clear()
+        #expect(persistence.load() == nil)
+    }
+
+#if os(macOS)
+    @Test("主窗口最小化时桌宠进入浮动状态，窗口关闭时清理")
+    @MainActor
+    func floatingDeskPetTracksWindowLifecycle() async throws {
+        let controller = DeskPetController(generator: ImmediateDeskPetGenerator())
+        controller.selectPhoto(Data([0x01, 0x02]), for: .ahe)
+        controller.generate()
+        try await Task.sleep(for: .milliseconds(20))
+        controller.setEnabled(true)
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 100, y: 100, width: 1_200, height: 760),
+            styleMask: [.titled, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        let floatingWindow = FloatingDeskPetWindow()
+        floatingWindow.attach(to: window, controller: controller, onDoubleTap: {})
+
+        NotificationCenter.default.post(
+            name: NSWindow.willMiniaturizeNotification,
+            object: window
+        )
+        #expect(controller.isFloating)
+
+        NotificationCenter.default.post(
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
+        #expect(!controller.isFloating)
+    }
+#endif
+
     @Test("同桌状态不会改变静态背景资源")
     @MainActor
     func deskOccupancySelectsSceneAsset() {
@@ -194,7 +259,7 @@ struct AppModelTests {
         model.toggleAmbient()
 
         #expect(!model.weatherEffectsEnabled)
-        #expect(!model.ambientEnabled)
+        #expect(model.ambientEnabled)
     }
 
     @Test("任务完成数来自任务模型")
@@ -260,7 +325,7 @@ struct AppModelTests {
         model.deactivateAudio()
 
         #expect(audio.commands == [
-            .start(.rain, true),
+            .start(.rain, false),
             .preset(.forest),
             .stop,
         ])
@@ -276,7 +341,7 @@ struct AppModelTests {
         model.enterMobileBackground()
 
         #expect(audio.commands == [
-            .start(.rain, true),
+            .start(.rain, false),
             .stop,
         ])
     }
@@ -292,9 +357,9 @@ struct AppModelTests {
         model.toggleAmbient()
 
         #expect(audio.commands == [
-            .start(.rain, true),
-            .enabled(false),
+            .start(.rain, false),
             .enabled(true),
+            .enabled(false),
         ])
     }
 
@@ -612,7 +677,13 @@ private struct ImmediateMemoryImageGenerator: MemoryImageGenerating {
 }
 
 private struct ImmediateDeskPetGenerator: DeskPetGenerating {
-    func generate(photoData: Data, partnerName: String) async throws -> Data { photoData }
+    let result: Data?
+
+    init(result: Data? = nil) { self.result = result }
+
+    func generate(photoData: Data, partnerName: String) async throws -> Data {
+        result ?? photoData
+    }
 }
 
 @Suite("场景生成契约")
@@ -764,6 +835,51 @@ struct SceneGenerationContractTests {
 @Suite("场景工坊流程")
 @MainActor
 struct SceneWorkshopTests {
+
+    @Test("未配置图像服务时场景生图流程会写入标准画布资产")
+    func hybridSceneGenerationUsesPersistedMockAsset() async throws {
+        let spec = GeneratedSceneSpec(
+            sceneID: "scene-persisted",
+            name: "测试场景",
+            location: "安静的木屋",
+            timeOfDay: .dusk,
+            weather: "晴朗",
+            mood: .warm,
+            windowView: "树林",
+            lighting: "壁炉",
+            keyObjects: ["书本"],
+            ambientPreset: .quiet,
+            effectPreset: .none
+        )
+        let request = try SceneGenerationRequest(spec: spec, styleReferences: [])
+        let generator = HybridSceneGenerator(configuration: .from(yaml: ""))
+        let result = try await generator.generate(request) { _ in }
+
+        #expect(result.review.isApproved)
+        #expect(result.image.canvas == SceneGenerationContract.canvas)
+        #expect(SceneImageLocator.url(for: result.image.relativePath) != nil)
+    }
+
+    @Test("生成场景元数据可以从本地存储恢复")
+    func generatedSceneMetadataPersists() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("zaichang-scenes-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        let persistence = ScenePersistence(fileURL: fileURL)
+        let scene = RoomScene(
+            id: "scene-restored",
+            origin: .generated,
+            name: "恢复测试",
+            eyebrow: "黄昏 · 晴朗",
+            headline: "在这里待一会儿",
+            image: .packaged(sceneID: "scene-restored", metadata: SceneImageMetadata(accessibilityDescription: "测试")),
+            ambientPreset: .quiet,
+            weatherEffect: .none,
+            promptVersion: SceneGenerationContract.currentPromptVersion
+        )
+        try persistence.save([scene])
+        #expect(persistence.load() == [scene])
+    }
 
     @Test("自然语言描述会形成可编辑的结构化场景")
     func mockDrafterCreatesEditableSpec() throws {

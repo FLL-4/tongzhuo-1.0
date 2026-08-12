@@ -30,7 +30,9 @@ struct MemoryDraft: Identifiable, Equatable, Codable {
     var deliveryPlan: MemoryDeliveryPlan
     var deliveryState: MemoryDeliveryState
     var imageData: Data?
+    var voiceNoteID: UUID?
     var createdAt: Date
+
 }
 
 protocol MemoryImageGenerating { func generate(prompt: String) async throws -> Data }
@@ -74,18 +76,38 @@ final class MemoryController: ObservableObject {
     @Published private(set) var cards: [MemoryDraft] = []
     @Published private(set) var generationState: MemoryGenerationState = .idle
     private let imageGenerator: any MemoryImageGenerating
+    private let persistence: MemoryPersistence
+    private var pendingVoiceNoteID: UUID?
     private var task: Task<Void, Never>?
 
-    init(imageGenerator: (any MemoryImageGenerating)? = nil) { self.imageGenerator = imageGenerator ?? HybridMemoryImageGenerator() }
+    init(imageGenerator: (any MemoryImageGenerating)? = nil, persistence: MemoryPersistence) {
+        self.imageGenerator = imageGenerator ?? HybridMemoryImageGenerator()
+        self.persistence = persistence
+        let stored = persistence.load()
+        drafts = stored.drafts
+        cards = stored.cards
+    }
+    convenience init(imageGenerator: (any MemoryImageGenerating)? = nil) {
+        self.init(imageGenerator: imageGenerator, persistence: MemoryPersistence())
+    }
     deinit { task?.cancel() }
 
     func makeDraft(title: String, mood: MemoryMood, observation: String, keyMoment: String, delivery: MemoryDeliveryPlan) {
-        let draft = MemoryDraft(id: UUID(), title: title.trimmingCharacters(in: .whitespacesAndNewlines), mood: mood, observation: observation.trimmingCharacters(in: .whitespacesAndNewlines), keyMoment: keyMoment.trimmingCharacters(in: .whitespacesAndNewlines), reviewState: .draft, deliveryPlan: delivery, deliveryState: .notScheduled, imageData: nil, createdAt: Date())
+        let draft = MemoryDraft(id: UUID(), title: title.trimmingCharacters(in: .whitespacesAndNewlines), mood: mood, observation: observation.trimmingCharacters(in: .whitespacesAndNewlines), keyMoment: keyMoment.trimmingCharacters(in: .whitespacesAndNewlines), reviewState: .draft, deliveryPlan: delivery, deliveryState: .notScheduled, imageData: nil, voiceNoteID: pendingVoiceNoteID, createdAt: Date())
+        pendingVoiceNoteID = nil
         drafts = [draft] + drafts
+        persist()
     }
 
-    func updateDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id }; drafts.insert(draft, at: 0) }
-    func discardDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id } }
+    func updateDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id }; drafts.insert(draft, at: 0); persist() }
+    func discardDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id }; persist() }
+
+    func attachVoiceNote(_ id: UUID) {
+        guard let draft = drafts.first else { pendingVoiceNoteID = id; return }
+        var updated = draft
+        updated.voiceNoteID = id
+        updateDraft(updated)
+    }
 
     func generateImage(for draft: MemoryDraft) {
         guard draft.reviewState.isEditableDraftState else { return }
@@ -114,6 +136,7 @@ final class MemoryController: ObservableObject {
         card.deliveryState = card.deliveryPlan == .archiveOnly ? .notScheduled : .scheduled
         cards = [card] + cards
         drafts.removeAll { $0.id == draft.id }
+        persist()
     }
 
     func archive(_ card: MemoryDraft) {
@@ -130,8 +153,37 @@ final class MemoryController: ObservableObject {
         updateCard(copy)
     }
 
-    func markDelivered(_ card: MemoryDraft) { cards.removeAll { $0.id == card.id }; cards.insert(card, at: 0) }
-    func updateCard(_ card: MemoryDraft) { cards.removeAll { $0.id == card.id }; cards.insert(card, at: 0) }
+    func markDelivered(_ card: MemoryDraft) { updateCard(card) }
+    func updateCard(_ card: MemoryDraft) { cards.removeAll { $0.id == card.id }; cards.insert(card, at: 0); persist() }
+
+    private func persist() {
+        try? persistence.save(drafts: drafts, cards: cards)
+    }
+}
+
+struct MemoryStore: Codable {
+    let drafts: [MemoryDraft]
+    let cards: [MemoryDraft]
+}
+
+final class MemoryPersistence {
+    private let fileURL: URL
+    init(fileManager: FileManager = .default) {
+        fileURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Zaichang", isDirectory: true)
+            .appendingPathComponent("memories.json")
+    }
+    func load() -> MemoryStore {
+        guard let data = try? Data(contentsOf: fileURL), let store = try? JSONDecoder().decode(MemoryStore.self, from: data) else {
+            return MemoryStore(drafts: [], cards: [])
+        }
+        return store
+    }
+    func save(drafts: [MemoryDraft], cards: [MemoryDraft]) throws {
+        let directory = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(MemoryStore(drafts: drafts, cards: cards)).write(to: fileURL, options: .atomic)
+    }
 }
 
 private extension MemoryReviewState {
