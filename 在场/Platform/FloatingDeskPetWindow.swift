@@ -53,6 +53,7 @@ final class FloatingDeskPetWindow: NSObject {
     private var hostingView: NSHostingView<AnyView>?
     private weak var mainWindow: NSWindow?
     private weak var controller: DeskPetController?
+    private var onDoubleTap: (() -> Void)?
     private var profileObservation: AnyCancellable?
     private var animationID = UUID()
 
@@ -62,7 +63,12 @@ final class FloatingDeskPetWindow: NSObject {
 
     // MARK: - Window lifecycle
 
-    func attach(to window: NSWindow?, controller: DeskPetController) {
+    func attach(
+        to window: NSWindow?,
+        controller: DeskPetController,
+        onDoubleTap: @escaping () -> Void
+    ) {
+        self.onDoubleTap = onDoubleTap
         observeProfileChanges(on: controller)
 
         guard mainWindow !== window else {
@@ -195,6 +201,7 @@ final class FloatingDeskPetWindow: NSObject {
         )
 
         let panel = panel ?? makePanel(
+            controller: controller,
             profile: profile,
             size: petSize,
             origin: petScreenPosition(petSize: petSize)
@@ -216,6 +223,7 @@ final class FloatingDeskPetWindow: NSObject {
     }
 
     private func makePanel(
+        controller: DeskPetController,
         profile: DeskPetProfile,
         size: CGFloat,
         origin: NSPoint
@@ -235,7 +243,14 @@ final class FloatingDeskPetWindow: NSObject {
         panel.hidesOnDeactivate = false
 
         let hostingView = NSHostingView(
-            rootView: AnyView(FloatingDeskPetView(profile: profile, size: size))
+            rootView: AnyView(
+                FloatingDeskPetView(
+                    controller: controller,
+                    profile: profile,
+                    size: size,
+                    onDoubleTap: onDoubleTap ?? {}
+                )
+            )
         )
         hostingView.frame = NSRect(x: 0, y: 0, width: size, height: size)
         panel.contentView = hostingView
@@ -336,13 +351,18 @@ final class FloatingDeskPetWindow: NSObject {
 }
 
 private struct FloatingDeskPetView: View {
+    @ObservedObject var controller: DeskPetController
     let profile: DeskPetProfile
     let size: CGFloat
+    let onDoubleTap: () -> Void
 
     var body: some View {
-        DeskPetImage(data: profile.generatedImageData)
-            .frame(width: size, height: size)
-            .shadow(color: .black.opacity(0.4), radius: 6, y: 3)
+        InteractiveDeskPetView(
+            controller: controller,
+            profile: profile,
+            size: size,
+            onDoubleTap: onDoubleTap
+        )
     }
 }
 #endif

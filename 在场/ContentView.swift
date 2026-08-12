@@ -26,7 +26,8 @@ struct ContentView: View {
                 HostingWindowReader { window in
                     FloatingDeskPetWindow.shared.attach(
                         to: window,
-                        controller: model.deskPet
+                        controller: model.deskPet,
+                        onDoubleTap: { [weak model] in model?.nudgeDeskMate() }
                     )
                 }
                 .frame(width: 0, height: 0)

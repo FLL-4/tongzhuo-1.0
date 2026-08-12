@@ -126,7 +126,9 @@ struct SceneStageView: View {
             }
 
             if let profile = deskPet.activeProfile, !deskPet.isFloating {
-                DeskPetOverlay(profile: profile)
+                DeskPetOverlay(controller: deskPet, profile: profile) {
+                    model.nudgeDeskMate()
+                }
                     .padding(.trailing, layout == .compact ? 14 : 22)
                     .padding(.bottom, 84 + bottomInset)
                     .transition(.scale.combined(with: .opacity))

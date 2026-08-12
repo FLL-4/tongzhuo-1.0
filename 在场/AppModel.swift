@@ -180,10 +180,28 @@ enum DeskSessionState: Equatable {
     case connected(DeskRoom)
 }
 
+enum NudgeAvailability: Equatable {
+    case available
+    case noPartner
+    case coolingDown(remainingSeconds: Int)
+
+    var unavailableMessage: String? {
+        switch self {
+        case .available:
+            nil
+        case .noPartner:
+            "加入同桌房间后才能拍一拍"
+        case .coolingDown(let remainingSeconds):
+            "刚刚拍过，\(remainingSeconds) 秒后再试"
+        }
+    }
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     static let maximumTaskCount = 5
     static let maximumTaskTitleLength = 30
+    static let nudgeCooldownSeconds: TimeInterval = 10
 
     @Published private(set) var scenes = RoomSceneCatalog.builtIn
     @Published private(set) var selectedSceneID = RoomSceneCatalog.focusScene.id
@@ -219,6 +237,7 @@ final class AppModel: ObservableObject {
     private var focusSessionStarted = true
     private var toastTask: Task<Void, Never>?
     private var deskJoinTask: Task<Void, Never>?
+    private var lastNudgeSentAt: Date?
     private var scheduledSuggestions: [PresenceSuggestionCategory: ScheduledPresenceSuggestion] = [:]
     private var suggestionCandidates: [PresenceSuggestionCategory: PresenceSuggestion] = [:]
     private var dailyTodoSuggestedDays: Set<String> = []
@@ -269,6 +288,34 @@ final class AppModel: ObservableObject {
 
     var currentDeskPartner: DeskPartner? { currentDeskRoom?.partner }
     var deskActionTitle: String { currentDeskRoom == nil ? "加入同桌" : "邀请同桌" }
+
+    func nudgeAvailability(at now: Date = Date()) -> NudgeAvailability {
+        guard currentDeskPartner != nil else { return .noPartner }
+        if let lastNudgeSentAt {
+            let remaining = Self.nudgeCooldownSeconds - now.timeIntervalSince(lastNudgeSentAt)
+            if remaining > 0 {
+                return .coolingDown(remainingSeconds: Int(ceil(remaining)))
+            }
+        }
+        return .available
+    }
+
+    func nudgeDeskMate(at now: Date = Date()) {
+        let availability = nudgeAvailability(at: now)
+        guard case .available = availability, let partner = currentDeskPartner else {
+            if let message = availability.unavailableMessage {
+                deskPet.presentNudgeFeedback(message: message, kind: .unavailable)
+            }
+            return
+        }
+
+        lastNudgeSentAt = now
+        deskPet.presentNudgeFeedback(
+            message: "已拍一拍\(partner.name)",
+            kind: .sent
+        )
+    }
+
     var selectedScene: RoomScene {
         scenes.first(where: { $0.id == selectedSceneID }) ?? RoomSceneCatalog.focusScene
     }
@@ -481,6 +528,7 @@ final class AppModel: ObservableObject {
         }
 
         deskJoinTask?.cancel()
+        resetNudgeSession()
         cancelSuggestions(in: .waitingForPartner, .partnerReady)
         deskErrorMessage = nil
         deskSession = .joining(code: code)
@@ -506,6 +554,7 @@ final class AppModel: ObservableObject {
 
     func createDeskRoom() {
         deskJoinTask?.cancel()
+        resetNudgeSession()
         cancelSuggestions(in: .waitingForPartner, .partnerReady)
         deskErrorMessage = nil
         let compact = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(8))
@@ -525,6 +574,7 @@ final class AppModel: ObservableObject {
 
     func updateDeskPartner(_ partner: DeskPartner?) {
         guard case var .connected(room) = deskSession else { return }
+        if room.partner?.id != partner?.id { resetNudgeSession() }
         room.partner = partner
         deskSession = .connected(room)
         if partner != nil {
@@ -539,6 +589,7 @@ final class AppModel: ObservableObject {
 
     func cancelDeskJoin() {
         deskJoinTask?.cancel()
+        resetNudgeSession()
         cancelSuggestions(in: .waitingForPartner, .partnerReady)
         deskSession = .disconnected
         deskErrorMessage = nil
@@ -555,12 +606,18 @@ final class AppModel: ObservableObject {
 
     func leaveDesk() {
         deskJoinTask?.cancel()
+        resetNudgeSession()
         cancelSuggestions(in: .waitingForPartner, .partnerReady)
         deskSession = .disconnected
         deskPet.clear()
         deskErrorMessage = nil
         refreshSuggestions()
         showToast("已经离开同桌房间")
+    }
+
+    private func resetNudgeSession() {
+        lastNudgeSentAt = nil
+        deskPet.dismissNudgeFeedback()
     }
 
     func performSuggestion(

@@ -11,6 +11,17 @@ enum DeskPetGenerationState: Equatable {
     case failed(String)
 }
 
+enum DeskPetNudgeFeedbackKind: Equatable {
+    case sent
+    case unavailable
+}
+
+struct DeskPetNudgeFeedback: Equatable, Identifiable {
+    let id = UUID()
+    let message: String
+    let kind: DeskPetNudgeFeedbackKind
+}
+
 enum DeskPetPersistenceError: LocalizedError {
     case saveFailed(String)
     case removeFailed(String)
@@ -429,12 +440,14 @@ final class DeskPetController: ObservableObject {
     @Published private(set) var state: DeskPetGenerationState = .idle
     @Published private(set) var profile: DeskPetProfile?
     @Published var isFloating: Bool = false
+    @Published private(set) var nudgeFeedback: DeskPetNudgeFeedback?
 
     private let generator: any DeskPetGenerating
     private let persistence: DeskPetPersistence
     private var pendingPhotoData: Data?
     private var pendingPartner: DeskPartner?
     private var generationTask: Task<Void, Never>?
+    private var nudgeFeedbackTask: Task<Void, Never>?
 
     init(generator: any DeskPetGenerating) {
         self.generator = generator
@@ -531,9 +544,27 @@ final class DeskPetController: ObservableObject {
         persistCurrentProfile()
     }
 
+    func presentNudgeFeedback(message: String, kind: DeskPetNudgeFeedbackKind) {
+        nudgeFeedbackTask?.cancel()
+        let feedback = DeskPetNudgeFeedback(message: message, kind: kind)
+        nudgeFeedback = feedback
+        nudgeFeedbackTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(1_600))
+            guard !Task.isCancelled, self?.nudgeFeedback?.id == feedback.id else { return }
+            self?.nudgeFeedback = nil
+        }
+    }
+
+    func dismissNudgeFeedback() {
+        nudgeFeedbackTask?.cancel()
+        nudgeFeedbackTask = nil
+        nudgeFeedback = nil
+    }
+
     func clear() {
         generationTask?.cancel()
         generationTask = nil
+        dismissNudgeFeedback()
         pendingPhotoData = nil
         pendingPartner = nil
         profile = nil
@@ -558,5 +589,6 @@ final class DeskPetController: ObservableObject {
 
     deinit {
         generationTask?.cancel()
+        nudgeFeedbackTask?.cancel()
     }
 }
