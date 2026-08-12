@@ -331,6 +331,7 @@ enum DeskPetError: LocalizedError {
 final class DeskPetController: ObservableObject {
     @Published private(set) var state: DeskPetGenerationState = .idle
     @Published private(set) var profile: DeskPetProfile?
+    @Published var isFloating: Bool = false
 
     private let generator: any DeskPetGenerating
     private var pendingPhotoData: Data?

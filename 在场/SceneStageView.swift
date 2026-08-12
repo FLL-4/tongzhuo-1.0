@@ -125,7 +125,7 @@ struct SceneStageView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            if let profile = deskPet.activeProfile {
+            if let profile = deskPet.activeProfile, !deskPet.isFloating {
                 DeskPetOverlay(profile: profile)
                     .padding(.trailing, layout == .compact ? 14 : 22)
                     .padding(.bottom, 84 + bottomInset)

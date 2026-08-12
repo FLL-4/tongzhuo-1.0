@@ -19,8 +19,13 @@ struct ContentView: View {
 #if os(macOS)
             .ignoresSafeArea(.container, edges: .top)
             .frame(minWidth: 980, minHeight: 620)
-#endif
+            .onAppear {
+                model.activateAudio()
+                FloatingDeskPetWindow.shared.setup(controller: model.deskPet)
+            }
+#else
             .onAppear { model.activateAudio() }
+#endif
             .onDisappear { model.deactivateAudio() }
 #if os(iOS)
             .onChange(of: scenePhase) { _, phase in
