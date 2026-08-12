@@ -22,8 +22,11 @@ struct SceneNativeRenderer: View {
 
     var body: some View {
         ZStack {
-            BundledSceneImage(relativePath: model.selectedSceneImage.relativePath)
-                .accessibilityLabel(model.selectedSceneImage.accessibilityDescription)
+            BundledSceneImage(
+                relativePath: model.selectedSceneImage.relativePath,
+                fitMode: .fitBlurred
+            )
+            .accessibilityLabel(model.selectedSceneImage.accessibilityDescription)
             SceneLightingOverlay(presence: model.presence)
             SceneWeatherOverlay(
                 effect: model.selectedScene.weatherEffect,
