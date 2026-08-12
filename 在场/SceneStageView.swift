@@ -284,11 +284,11 @@ private struct SceneControlsView: View {
     @ViewBuilder
     var body: some View {
         if layout == .compact {
-            GlassEffectContainer(spacing: 8) {
+            Group {
                 compactControls
             }
         } else {
-            GlassEffectContainer(spacing: 10) {
+            Group {
                 expandedControls
             }
         }
