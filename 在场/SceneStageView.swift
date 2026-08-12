@@ -231,19 +231,42 @@ private struct PresenceSuggestionView: View {
                     .font(.system(size: 12))
                     .lineLimit(3)
 
-                Button {
-                    model.performSuggestion(suggestion.id)
-                } label: {
-                    Label(suggestion.actionTitle, systemImage: suggestion.action.symbol)
-                        .font(.system(size: 11, weight: .semibold))
-                        .padding(.horizontal, 10)
-                        .frame(minHeight: 30)
-                        .adaptiveHitTarget(minHeight: 30)
-                        .foregroundStyle(Color(red: 0.17, green: 0.13, blue: 0.09))
-                        .background(Palette.amber)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                HStack(spacing: 8) {
+                    Button {
+                        model.performSuggestion(suggestion.id)
+                    } label: {
+                        Label(
+                            suggestion.primaryOption.title,
+                            systemImage: suggestion.primaryOption.action.symbol
+                        )
+                            .font(.system(size: 11, weight: .semibold))
+                            .padding(.horizontal, 10)
+                            .frame(minHeight: 30)
+                            .adaptiveHitTarget(minHeight: 30)
+                            .foregroundStyle(Color(red: 0.17, green: 0.13, blue: 0.09))
+                            .background(Palette.amber)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(ZaichangPlainButtonStyle())
+
+                    if let secondaryOption = suggestion.secondaryOption {
+                        Button {
+                            model.performSuggestion(suggestion.id, action: secondaryOption.action)
+                        } label: {
+                            Label(secondaryOption.title, systemImage: secondaryOption.action.symbol)
+                                .font(.system(size: 11, weight: .semibold))
+                                .padding(.horizontal, 10)
+                                .frame(minHeight: 30)
+                                .adaptiveHitTarget(minHeight: 30)
+                                .foregroundStyle(Palette.ink)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.white.opacity(0.24))
+                                )
+                        }
+                        .buttonStyle(ZaichangPlainButtonStyle())
+                    }
                 }
-                .buttonStyle(ZaichangPlainButtonStyle())
             }
             .frame(maxWidth: 330, alignment: .leading)
             .layoutPriority(1)
@@ -269,8 +292,9 @@ private extension PresenceSuggestionAction {
     var symbol: String {
         switch self {
         case .beginFocus: "play.fill"
+        case .resumeFocus: "play.fill"
+        case .inviteDeskMate: "person.badge.plus"
         case .openVoiceRecorder: "mic"
-        case .openDeskRoom: "person.2"
         case .beginRest: "cup.and.saucer"
         }
     }

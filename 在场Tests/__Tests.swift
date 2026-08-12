@@ -308,8 +308,7 @@ struct AppModelTests {
         #expect(model.currentDeskPartner == nil)
         #expect(model.currentDeskRoom?.code.count == 9)
         #expect(model.deskActionTitle == "邀请同桌")
-        #expect(model.activeSuggestion?.action == .beginFocus)
-        #expect(model.activeSuggestion?.actionTitle == "开始 25 分钟")
+        #expect(model.activeSuggestion == nil)
         #expect(model.toastMessage == nil)
     }
 
@@ -323,7 +322,7 @@ struct AppModelTests {
         #expect(model.remainingSeconds == 25 * 60)
         #expect(!model.timerRunning)
         #expect(model.activeSuggestion?.message == "计时器已经准备好，要从一段完整的 25 分钟重新开始吗？")
-        #expect(model.activeSuggestion?.action == .beginFocus)
+        #expect(model.activeSuggestion?.primaryOption.action == .beginFocus)
         #expect(model.toastMessage == nil)
     }
 
@@ -355,32 +354,6 @@ struct AppModelTests {
         #expect(model.activeSuggestion == nil)
     }
 
-    @Test("等待同桌建议会在加入流程开始时失效")
-    @MainActor
-    func deskTransitionClearsWaitingSuggestion() throws {
-        let model = AppModel()
-        model.createDeskRoom()
-        let code = try #require(model.currentDeskRoom?.code)
-        #expect(model.activeSuggestion != nil)
-
-        model.joinDesk(code: code)
-
-        #expect(model.activeSuggestion == nil)
-    }
-
-    @Test("同桌加入等待房间后建议自动失效")
-    @MainActor
-    func partnerArrivalClearsWaitingSuggestion() {
-        let model = AppModel()
-        model.createDeskRoom()
-        #expect(model.activeSuggestion != nil)
-
-        model.updateDeskPartner(.ahe)
-
-        #expect(model.currentDeskPartner == .ahe)
-        #expect(model.activeSuggestion == nil)
-    }
-
     @Test("专注结束且有同桌时建议打开留声机")
     @MainActor
     func focusCompletionWithPartnerSuggestsVoiceRecorder() throws {
@@ -390,7 +363,7 @@ struct AppModelTests {
         let suggestion = try #require(model.activeSuggestion)
 
         #expect(suggestion.message == "这一段已经完成。要给阿禾留一句话吗？")
-        #expect(suggestion.action == .openVoiceRecorder)
+        #expect(suggestion.primaryOption.action == .openVoiceRecorder)
         #expect(model.toastMessage == nil)
 
         model.performSuggestion(suggestion.id)
@@ -409,7 +382,7 @@ struct AppModelTests {
         let suggestion = try #require(model.activeSuggestion)
 
         #expect(suggestion.message == "这一段已经完成，先休息一会儿。")
-        #expect(suggestion.action == .beginRest)
+        #expect(suggestion.primaryOption.action == .beginRest)
 
         model.performSuggestion(suggestion.id)
 
