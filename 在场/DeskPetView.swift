@@ -136,18 +136,43 @@ struct DeskPetOverlay: View {
     @ObservedObject var controller: DeskPetController
     let profile: DeskPetProfile
     let onDoubleTap: () -> Void
+    @GestureState private var dragOffset: CGSize = .zero
 
     var body: some View {
         GeometryReader { geo in
             let size = min(geo.size.width, geo.size.height) * 0.22
             let clampedSize = min(max(size, 80), 200)
+            let half = clampedSize / 2
+            let defaultPos = CGPoint(
+                x: geo.size.width - half - 22,
+                y: geo.size.height - half - 84
+            )
+            let basePos = controller.scenePosition ?? defaultPos
+            let currentPos = CGPoint(
+                x: basePos.x + dragOffset.width,
+                y: basePos.y + dragOffset.height
+            )
+
             InteractiveDeskPetView(
                 controller: controller,
                 profile: profile,
                 size: clampedSize,
-                onDoubleTap: onDoubleTap
+                onDoubleTap: onDoubleTap,
+                autonomousJump: true,
+                isDragging: dragOffset != .zero
             )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .position(currentPos)
+            .gesture(
+                DragGesture()
+                    .updating($dragOffset) { value, state, _ in
+                        state = value.translation
+                    }
+                    .onEnded { value in
+                        let newX = min(max(basePos.x + value.translation.width, half), geo.size.width - half)
+                        let newY = min(max(basePos.y + value.translation.height, half), geo.size.height - half)
+                        controller.scenePosition = CGPoint(x: newX, y: newY)
+                    }
+            )
         }
     }
 }
@@ -157,7 +182,10 @@ struct InteractiveDeskPetView: View {
     let profile: DeskPetProfile
     let size: CGFloat
     let onDoubleTap: () -> Void
+    var autonomousJump: Bool = false
+    var isDragging: Bool = false
     @State private var sentAnimationTrigger = 0
+    @State private var jumpTrigger = 0
 
     private var feedback: DeskPetNudgeFeedback? { controller.nudgeFeedback }
 
@@ -192,6 +220,17 @@ struct InteractiveDeskPetView: View {
                         SpringKeyframe(1, duration: 0.32, spring: .smooth)
                     }
                 }
+                .keyframeAnimator(
+                    initialValue: 0.0,
+                    trigger: jumpTrigger
+                ) { content, offsetY in
+                    content.offset(y: offsetY)
+                } keyframes: { _ in
+                    KeyframeTrack {
+                        SpringKeyframe(-size * 0.32, duration: 0.24, spring: .bouncy)
+                        SpringKeyframe(0, duration: 0.32, spring: .bouncy)
+                    }
+                }
                 .onTapGesture(count: 2, perform: onDoubleTap)
 
             if let feedback {
@@ -219,6 +258,16 @@ struct InteractiveDeskPetView: View {
             sentAnimationTrigger += 1
         }
         .accessibilityLabel("\(profile.partnerName)的桌宠")
+        .task(id: "\(autonomousJump)-\(isDragging)") {
+            guard autonomousJump, !isDragging else { return }
+            while !Task.isCancelled {
+                // 每隔 6 ~ 13 秒随机跳一跳
+                let delay = 6.0 + Double.random(in: 0...7)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                if Task.isCancelled { break }
+                jumpTrigger += 1
+            }
+        }
     }
 }
 

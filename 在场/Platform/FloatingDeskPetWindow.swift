@@ -57,6 +57,11 @@ final class FloatingDeskPetWindow: NSObject {
     private var profileObservation: AnyCancellable?
     private var animationID = UUID()
 
+    // 桌宠自主行为（静止/跳一跳）
+    private var behaviorTimer: DispatchWorkItem?
+    private var behaviorsActive = false
+    private var rngState: UInt64 = 0
+
     override init() {
         super.init()
     }
@@ -261,6 +266,7 @@ final class FloatingDeskPetWindow: NSObject {
     }
 
     private func hideFloatingPet(animated: Bool) {
+        stopBehaviorLoop()
         guard let panel else {
             controller?.isFloating = false
             return
@@ -312,17 +318,101 @@ final class FloatingDeskPetWindow: NSObject {
                     context.duration = 0.12
                     context.timingFunction = CAMediaTimingFunction(name: .easeIn)
                     panel.animator().setFrame(destination, display: true)
+                } completionHandler: { [weak self] in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.animationID == animationID else { return }
+                        self.startBehaviorLoop(baseY: destination.origin.y)
+                    }
                 }
             }
         }
     }
 
     private func dismissPanel() {
+        stopBehaviorLoop()
         animationID = UUID()
         panel?.orderOut(nil)
         panel = nil
         hostingView = nil
         controller?.isFloating = false
+    }
+
+    // MARK: - Autonomous behavior (idle / move / jump)
+
+    private func startBehaviorLoop(baseY: CGFloat) {
+        guard panel != nil else { return }
+        behaviorsActive = true
+        scheduleNextAction()
+    }
+
+    private func stopBehaviorLoop() {
+        behaviorsActive = false
+        behaviorTimer?.cancel()
+        behaviorTimer = nil
+    }
+
+    private func scheduleNextAction() {
+        guard behaviorsActive else { return }
+        behaviorTimer?.cancel()
+
+        // 每个动作之间停顿 4 ~ 10 秒
+        let delay = 4.0 + nextUnit() * 6.0
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in self?.performRandomAction() }
+        }
+        behaviorTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func performRandomAction() {
+        guard behaviorsActive, panel != nil, mainWindow?.isMiniaturized == true else {
+            stopBehaviorLoop()
+            return
+        }
+
+        // 静止 60% / 跳一跳 40%
+        if nextUnit() < 0.6 {
+            scheduleNextAction()
+        } else {
+            performJump()
+        }
+    }
+
+    private func performJump() {
+        guard let panel else { scheduleNextAction(); return }
+
+        let petSize = panel.frame.width
+        let landingFrame = panel.frame
+        var raisedFrame = landingFrame
+        raisedFrame.origin.y += petSize * 0.5
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrame(raisedFrame, display: true)
+        } completionHandler: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, let panel = self.panel, self.behaviorsActive else { return }
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.20
+                    context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+                    panel.animator().setFrame(landingFrame, display: true)
+                } completionHandler: { [weak self] in
+                    Task { @MainActor [weak self] in self?.scheduleNextAction() }
+                }
+            }
+        }
+    }
+
+    /// 以当前时间为种子的伪随机数，返回 [0, 1)
+    private func nextUnit() -> Double {
+        var x = rngState ^ UInt64(bitPattern: Int64(Date().timeIntervalSince1970 * 1000))
+        x = x == 0 ? 0x9E3779B97F4A7C15 : x
+        x ^= x << 13
+        x ^= x >> 7
+        x ^= x << 17
+        rngState = x
+        return Double(x >> 11) / Double(1 << 53)
     }
 
     // MARK: - Geometry
@@ -340,6 +430,17 @@ final class FloatingDeskPetWindow: NSObject {
         guard let window = mainWindow else {
             let screen = NSScreen.main?.visibleFrame ?? .zero
             return NSPoint(x: screen.maxX - petSize - 22, y: screen.minY + 84)
+        }
+
+        let half = petSize / 2
+
+        // 如果用户在场景内拖拽过桌宠，用拖拽后的位置映射到屏幕坐标
+        if let pos = controller?.scenePosition {
+            // pos 为场景本地坐标（左上角原点，y 向下）下的桌宠中心
+            let sceneLeft = window.frame.minX + LayoutMetrics.sidebarWidth
+            let centerX = sceneLeft + pos.x
+            let centerY = window.frame.maxY - pos.y  // 转换为屏幕坐标（左下角原点，y 向上）
+            return NSPoint(x: centerX - half, y: centerY - half)
         }
 
         return NSPoint(
