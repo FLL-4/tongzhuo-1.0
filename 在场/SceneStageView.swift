@@ -13,6 +13,7 @@ struct SceneStageView: View {
     let layout: SceneStageLayout
     var bottomInset: CGFloat = 0
     @State private var partnerPopoverPresented = false
+    @State private var endFocusConfirmationPresented = false
 
     init(model: AppModel, layout: SceneStageLayout, bottomInset: CGFloat = 0) {
         self.model = model
@@ -40,6 +41,32 @@ struct SceneStageView: View {
             .padding(.top, 30)
             .padding(.leading, 28)
             .allowsHitTesting(false)
+
+            if let task = model.activeFocusTask {
+                HStack(spacing: 10) {
+                    Label(task.title, systemImage: "checklist")
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(2)
+
+                    Button {
+                        endFocusConfirmationPresented = true
+                    } label: {
+                        Label("结束专注", systemImage: "stop.fill")
+                            .font(.system(size: 10, weight: .semibold))
+                            .adaptiveHitTarget(minHeight: 32)
+                    }
+                    .buttonStyle(ZaichangPlainButtonStyle())
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(.black.opacity(0.66))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white.opacity(0.16)))
+                .clipShape(RoundedRectangle(cornerRadius: 7))
+                .frame(maxWidth: layout == .compact ? 310 : 420, alignment: .leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, layout == .compact ? 104 : 102)
+                .padding(.leading, 28)
+            }
 
             if let partner = model.currentDeskPartner {
                 Button {
@@ -140,6 +167,18 @@ struct SceneStageView: View {
                 .padding(.bottom, 22 + bottomInset)
         }
         .clipped()
+        .confirmationDialog(
+            "现在结束这一段专注？",
+            isPresented: $endFocusConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("确认结束专注", role: .destructive) {
+                model.manuallyEndFocusSession()
+            }
+            Button("继续专注", role: .cancel) {}
+        } message: {
+            Text("结束后会引导你进入留声机，Todo 不会被自动完成。")
+        }
     }
 }
 
@@ -385,6 +424,7 @@ private struct SceneControlsView: View {
                     Image(systemName: "arrow.counterclockwise")
                         .adaptiveHitTarget(minWidth: 32, minHeight: 32)
                 }
+                .disabled(model.activeFocusSession != nil)
                 .accessibilityLabel("重置计时器")
                 .help("重置计时器")
             }
@@ -470,6 +510,7 @@ private struct SceneControlsView: View {
                     Image(systemName: "arrow.counterclockwise")
                         .adaptiveHitTarget(minWidth: 26, minHeight: 30)
                 }
+                .disabled(model.activeFocusSession != nil)
                 .accessibilityLabel("重置计时器")
             }
             .buttonStyle(ZaichangPlainButtonStyle())

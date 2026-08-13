@@ -8,6 +8,8 @@ struct DeskSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var code = ""
     @State private var leaveConfirmationPresented = false
+    @State private var selectedDurationMinutes = 25
+    @State private var selectedTaskID: FocusTask.ID?
     @FocusState private var codeFieldFocused: Bool
 
     var body: some View {
@@ -53,7 +55,7 @@ struct DeskSheet: View {
             }
 
             HStack(spacing: 8) {
-                TextField("XXXX-XXXX", text: $code)
+                TextField("输入任意邀请码", text: $code)
                     .textFieldStyle(.plain)
                     .font(.system(size: 18, weight: .semibold, design: .monospaced))
                     .focused($codeFieldFocused)
@@ -178,6 +180,10 @@ struct DeskSheet: View {
             .overlay(alignment: .top) { Divider().overlay(Palette.line) }
             .overlay(alignment: .bottom) { Divider().overlay(Palette.line) }
 
+            if model.activeFocusSession == nil {
+                focusConfiguration
+            }
+
             DeskPetSection(controller: model.deskPet, partner: room.partner)
 
             Button {
@@ -197,6 +203,61 @@ struct DeskSheet: View {
         }
     }
 
+    private var focusConfiguration: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("准备这一段专注")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("选好时长和今日要做的事，场景会在开始时随机选择。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Palette.muted)
+            }
+
+            Picker("专注时长", selection: $selectedDurationMinutes) {
+                ForEach(FocusSessionConfiguration.allowedDurations, id: \.self) { minutes in
+                    Text("\(minutes) 分钟").tag(minutes)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("今日 Todo")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+
+                ForEach(model.incompleteTasks) { task in
+                    Button {
+                        selectedTaskID = task.id
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: selectedTaskID == task.id ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selectedTaskID == task.id ? Palette.amber : Palette.muted)
+                            Text(task.title)
+                                .lineLimit(2)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .adaptiveFullWidthHitTarget(minHeight: 36)
+                        .padding(.horizontal, 10)
+                        .background(Palette.surface3)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.12)))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(ZaichangPlainButtonStyle())
+                    .accessibilityLabel("选择 Todo：\(task.title)")
+                }
+            }
+
+            PanelButton(title: "随机场景并开始", symbol: "play.fill", isProminent: true) {
+                startFocus()
+            }
+            .disabled(selectedTaskID == nil)
+            .opacity(selectedTaskID == nil ? 0.45 : 1)
+        }
+        .padding(.vertical, 18)
+        .overlay(alignment: .bottom) { Divider().overlay(Palette.line) }
+    }
+
     private var codeFieldStroke: Color {
         model.deskErrorMessage == nil ? Color.white.opacity(0.16) : Color(red: 0.72, green: 0.36, blue: 0.31)
     }
@@ -204,6 +265,15 @@ struct DeskSheet: View {
     private func joinDesk() {
         guard model.isValidDeskCode(code) else { return }
         model.joinDesk(code: code)
+    }
+
+    private func startFocus() {
+        guard let selectedTaskID,
+              model.beginDeskFocus(
+                durationMinutes: selectedDurationMinutes,
+                taskID: selectedTaskID
+              ) else { return }
+        dismiss()
     }
 
     private func remainingMinutes(for room: DeskRoom) -> Int {

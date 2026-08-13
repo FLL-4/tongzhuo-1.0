@@ -10,34 +10,81 @@ import XCTest
 final class __UITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
+    func testSceneSelectionRefreshesBackground() throws {
+        let app = launchApp()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
+        XCTAssertTrue(app.images["专注状态的雨夜书房静态背景"].waitForExistence(timeout: 3))
+        app.buttons["场景"].click()
+        app.buttons["选择场景：创作"].click()
+
+        XCTAssertTrue(app.images["创作状态的暖光工作坊静态背景"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.images["专注状态的雨夜书房静态背景"].exists)
+    }
+
+    @MainActor
+    func testJoinConfigureAndStartFocus() throws {
+        let app = launchApp()
+
+        app.buttons["同桌"].click()
+        let inviteCode = app.textFields["输入任意邀请码"]
+        XCTAssertTrue(inviteCode.waitForExistence(timeout: 3))
+        inviteCode.click()
+        inviteCode.typeText("demo")
+        app.buttons["加入房间"].click()
+
+        XCTAssertTrue(app.staticTexts["准备这一段专注"].waitForExistence(timeout: 3))
+        app.buttons["选择 Todo：补齐方案最后两页"].click()
+        app.buttons["随机场景并开始"].click()
+
+        XCTAssertTrue(app.staticTexts["补齐方案最后两页"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["结束专注"].exists)
+        XCTAssertFalse(app.buttons["重置计时器"].isEnabled)
+    }
+
+    @MainActor
+    func testManuallyEndFocusOpensRecorderGuide() throws {
+        let app = launchApp()
+        startFocus(in: app)
+
+        app.buttons["结束专注"].click()
+        let confirmEnd = app.sheets.buttons["确认结束专注"]
+        XCTAssertTrue(confirmEnd.waitForExistence(timeout: 2))
+        confirmEnd.click()
+
+        XCTAssertTrue(app.buttons["打开留声机"].waitForExistence(timeout: 3))
+        app.buttons["打开留声机"].click()
+        XCTAssertTrue(app.staticTexts["把这句话留到合适的时候"].waitForExistence(timeout: 3))
     }
 
     @MainActor
     func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
         measure(metrics: [XCTApplicationLaunchMetric()]) {
             XCUIApplication().launch()
         }
+    }
+
+    @MainActor
+    private func launchApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func startFocus(in app: XCUIApplication) {
+        app.buttons["同桌"].click()
+        let inviteCode = app.textFields["输入任意邀请码"]
+        XCTAssertTrue(inviteCode.waitForExistence(timeout: 3))
+        inviteCode.click()
+        inviteCode.typeText("demo")
+        app.buttons["加入房间"].click()
+        XCTAssertTrue(app.staticTexts["准备这一段专注"].waitForExistence(timeout: 3))
+        app.buttons["选择 Todo：补齐方案最后两页"].click()
+        app.buttons["随机场景并开始"].click()
+        XCTAssertTrue(app.buttons["结束专注"].waitForExistence(timeout: 3))
     }
 }
