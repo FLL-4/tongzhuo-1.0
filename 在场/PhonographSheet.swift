@@ -10,15 +10,42 @@ struct PhonographSheet: View {
     @State private var keyMoment = ""
     @State private var mood: MemoryMood = .warm
     @State private var selectedTemplateID: String?
+    @State private var isStartingAnotherRecord = false
 
     var body: some View {
         SheetContainer(eyebrow: "留声机", title: "把这一刻留下来", dismiss: dismiss, maxWidth: 600) {
             VStack(alignment: .leading, spacing: 16) {
-                if let draft = memory.drafts.first {
+                if isStartingAnotherRecord {
+                    draftEditor(
+                        title: $title,
+                        observation: $observation,
+                        keyMoment: $keyMoment,
+                        mood: $mood,
+                        submitTitle: "生成卡片选项",
+                        submitDisabled: observation.trimmed.isEmpty,
+                        submitAction: {
+                            memory.makeDraft(
+                                title: title.isEmpty ? "未命名的一刻" : title,
+                                mood: mood,
+                                observation: observation,
+                                keyMoment: keyMoment,
+                                delivery: .activityEnd,
+                                sourceEvent: .manual,
+                                creatorName: "我",
+                                participantNames: [],
+                                visibility: .shared
+                            )
+                            isStartingAnotherRecord = false
+                        },
+                        footer: {
+                            voiceAttachmentPanel()
+                        }
+                    )
+                } else if let draft = memory.drafts.first {
                     draftContent(draft)
-        } else if let card = memory.cards.first {
-            savedCard(card)
-        } else {
+                } else if let card = memory.cards.first {
+                    savedCard(card)
+                } else {
                     draftEditor(
                         title: $title,
                         observation: $observation,
@@ -161,6 +188,41 @@ struct PhonographSheet: View {
                         )
                         model.showToast("语音已保存，继续整理为记忆卡片")
                     }
+                }
+            }
+        }
+        .padding(10)
+        .background(Palette.surface2, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func voiceAttachmentPanel() -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("语音附件")
+                .font(.system(size: 12, weight: .semibold))
+            Text("可以先录一段语音，再继续整理。")
+                .font(.system(size: 10))
+                .foregroundStyle(Palette.muted)
+            VoiceRecorderPanel(recorder: recorder) {
+                if let note = recorder.saveDraft() {
+                    memory.makeDraft(
+                        title: title.isEmpty ? "未命名的一刻" : title,
+                        mood: mood,
+                        observation: observation,
+                        keyMoment: keyMoment,
+                        delivery: .activityEnd,
+                        sourceEvent: .manual,
+                        creatorName: "我",
+                        participantNames: [],
+                        visibility: .shared,
+                        voiceAttachment: .init(
+                            noteID: note.id,
+                            filename: note.filename,
+                            duration: note.duration,
+                            createdAt: note.createdAt,
+                            delivery: note.delivery
+                        )
+                    )
+                    model.showToast("语音已保存，继续整理为记忆卡片")
                 }
             }
         }
@@ -316,9 +378,11 @@ struct PhonographSheet: View {
                 .buttonStyle(.bordered)
                 .disabled(!recorder.savedNotes.contains(where: { $0.id == voice.noteID }))
             }
-            HStack {
+            HStack(spacing: 12) {
                 Button("推进送达") { memory.advanceDeliveryState(for: card) }
                     .buttonStyle(.bordered)
+                Button("再记录一份") { startAnotherRecord() }
+                    .buttonStyle(.borderedProminent)
             }
         }
     }
@@ -354,6 +418,15 @@ struct PhonographSheet: View {
         case .opened: "已打开"
         case .failed: "送达失败"
         }
+    }
+
+    private func startAnotherRecord() {
+        title = ""
+        observation = ""
+        keyMoment = ""
+        mood = .warm
+        selectedTemplateID = nil
+        isStartingAnotherRecord = true
     }
 }
 
