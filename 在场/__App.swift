@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct __App: App {
+    init() {
+        AppStoragePaths.migrateLegacyRootIfNeeded()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
