@@ -142,8 +142,7 @@ struct DeskPetSection: View {
 }
 
 /// Provides one photo entry point while keeping platform-native sources behind it.
-struct DeskPetPhotoPicker<Content: View>: View {
-    @Binding var selection: PhotosPickerItem?
+struct DeskPetPhotoPicker<Content: View>: View {    @Binding var selection: PhotosPickerItem?
     let onData: (Data) -> Void
     @ViewBuilder let label: () -> Content
 
@@ -292,6 +291,7 @@ struct DeskPetOverlay: View {
 
 struct DeskPetPairOverlay: View {
     @ObservedObject var controller: DeskPetController
+    @ObservedObject var ownController: OwnDeskPetController
     let partnerProfile: DeskPetProfile?
     let partnerName: String?
     let onPartnerDoubleTap: () -> Void
@@ -310,7 +310,7 @@ struct DeskPetPairOverlay: View {
                     canvasSize: geo.size,
                     onMove: controller.moveOwnPet
                 ) { isDragging in
-                    BuiltInOwnDeskPetView(size: petSize, autonomousJump: !isDragging)
+                    BuiltInOwnDeskPetView(controller: ownController, size: petSize, autonomousJump: !isDragging)
                 }
 
                 if let partnerProfile {
@@ -370,12 +370,13 @@ struct DeskPetPairOverlay: View {
 }
 
 private struct BuiltInOwnDeskPetView: View {
+    @ObservedObject var controller: OwnDeskPetController
     let size: CGFloat
     var autonomousJump = true
 
     var body: some View {
         Group {
-            if let data = Self.imageData {
+            if let data = controller.displayImageData {
                 DeskPetImage(data: data)
             } else {
                 PixelDeskPetSilhouette(
@@ -389,11 +390,6 @@ private struct BuiltInOwnDeskPetView: View {
         .shadow(color: .black.opacity(0.34), radius: 8, y: 4)
         .scenePetJump(size: size, isEnabled: autonomousJump)
         .accessibilityLabel("我的桌宠")
-    }
-
-    private static var imageData: Data? {
-        guard let url = Bundle.main.url(forResource: "own-desk-pet", withExtension: "png") else { return nil }
-        return try? Data(contentsOf: url)
     }
 }
 

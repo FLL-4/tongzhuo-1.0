@@ -35,6 +35,8 @@ struct AppShellView: View {
                 SceneWorkshopSheet(model: model)
             case .context:
                 ContextSheet(model: model, recorder: model.voiceRecorder)
+            case .settings:
+                SettingsSheet(model: model)
             }
         }
     }
