@@ -214,20 +214,21 @@ struct MockDeskPetGenerator: DeskPetGenerating {
 }
 
 struct HybridDeskPetGenerator: DeskPetGenerating {
-    private let configuration: APIConfiguration
+    private let injectedConfiguration: APIConfiguration?
 
-    init(configuration: APIConfiguration = .load()) {
-        self.configuration = configuration
+    init(configuration: APIConfiguration? = nil) {
+        self.injectedConfiguration = configuration
     }
 
     func generate(photoData: Data, partnerName: String) async throws -> Data {
-        guard configuration.isDeskPetImageGenerationConfigured else {
-            throw DeskPetError.notConfigured
-        }
+        // 每次生成时读取最新配置，设置页保存后即时生效
+        let configuration = injectedConfiguration ?? .load()
+        guard configuration.isDeskPetImageGenerationConfigured else { throw DeskPetError.notConfigured }
         let generated = try await RemoteDeskPetGenerator(configuration: configuration)
             .generate(photoData: photoData, partnerName: partnerName)
 
-        // 抠图，确保透明背景
+        // 抠图是可选的；关闭或未配置时保留图像模型的结果。
+        guard configuration.matting.isConfigured else { return generated }
         return try await RemoteMattingClient(configuration: configuration.matting)
             .removeBackground(from: generated)
     }
@@ -635,5 +636,108 @@ final class DeskPetController: ObservableObject {
     deinit {
         generationTask?.cancel()
         nudgeFeedbackTask?.cancel()
+    }
+}
+
+/// 管理「我的桌宠」形象。与好友桌宠不同，它始终可见、不受房间约束，
+/// 复用同样的生成流程与持久化机制，只是存到独立目录。
+@MainActor
+final class OwnDeskPetController: ObservableObject {
+    @Published private(set) var state: DeskPetGenerationState = .idle
+    /// 当前生效的桌宠形象数据。为 nil 时视图回落到内置形象。
+    @Published private(set) var imageData: Data?
+
+    private let generator: any DeskPetGenerating
+    private let persistence: DeskPetPersistence
+    private var pendingPhotoData: Data?
+    private var generationTask: Task<Void, Never>?
+
+    init(
+        generator: any DeskPetGenerating,
+        persistence: DeskPetPersistence? = nil
+    ) {
+        self.generator = generator
+        self.persistence = persistence ?? DeskPetPersistence(
+            directoryURL: AppStoragePaths.ownDeskPetDirectory()
+        )
+        restorePersisted()
+    }
+
+    convenience init() {
+        self.init(generator: HybridDeskPetGenerator())
+    }
+
+    var hasSelectedPhoto: Bool { pendingPhotoData != nil }
+    var selectedPhotoData: Data? { pendingPhotoData }
+
+    /// 生效的桌宠形象：优先使用用户生成的，否则回落到内置默认形象。
+    var displayImageData: Data? { imageData ?? Self.bundledImageData }
+
+    /// 是否正在使用内置默认形象（尚未生成自定义桌宠）。
+    var isUsingDefaultImage: Bool { imageData == nil }
+
+    nonisolated static var bundledImageData: Data? {
+        guard let url = Bundle.main.url(forResource: "own-desk-pet", withExtension: "png") else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    func selectPhoto(_ data: Data) {
+        generationTask?.cancel()
+        pendingPhotoData = data
+        state = .photoSelected
+    }
+
+    func generate() {
+        guard let pendingPhotoData else { return }
+        generationTask?.cancel()
+        state = .generating
+
+        let generator = self.generator
+        generationTask = Task { @MainActor [weak self] in
+            do {
+                let generated = try await generator.generate(photoData: pendingPhotoData, partnerName: "我")
+                guard let self, !Task.isCancelled else { return }
+                let profile = DeskPetProfile(
+                    id: UUID(),
+                    partnerID: UUID(),
+                    partnerName: "我",
+                    sourceImageData: pendingPhotoData,
+                    generatedImageData: generated,
+                    isEnabled: true
+                )
+                do {
+                    try persistence.save(profile)
+                } catch {
+                    state = .failed(DeskPetPersistenceError.saveFailed(error.localizedDescription).localizedDescription)
+                    return
+                }
+                imageData = generated
+                state = .ready
+            } catch is CancellationError {
+                // 更换照片会取消旧任务。
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                state = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    func reset() {
+        generationTask?.cancel()
+        generationTask = nil
+        pendingPhotoData = nil
+        imageData = nil
+        state = .idle
+        try? persistence.remove()
+    }
+
+    private func restorePersisted() {
+        guard let restored = persistence.load() else { return }
+        imageData = restored.generatedImageData
+        state = .ready
+    }
+
+    deinit {
+        generationTask?.cancel()
     }
 }

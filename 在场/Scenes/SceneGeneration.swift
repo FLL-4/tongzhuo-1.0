@@ -326,16 +326,18 @@ protocol SceneGenerating {
 }
 
 struct HybridSceneGenerator: SceneGenerating {
-    private let configuration: APIConfiguration
+    private let injectedConfiguration: APIConfiguration?
 
-    init(configuration: APIConfiguration = .load()) {
-        self.configuration = configuration
+    init(configuration: APIConfiguration? = nil) {
+        self.injectedConfiguration = configuration
     }
 
     func generate(
         _ request: SceneGenerationRequest,
         progress: @escaping (SceneGenerationState) -> Void
     ) async throws -> SceneGenerationResult {
+        // 每次生成时读取最新配置，设置页保存后即时生效
+        let configuration = injectedConfiguration ?? .load()
         guard configuration.isSceneImageGenerationConfigured else {
             throw SceneGenerationError.notConfigured
         }

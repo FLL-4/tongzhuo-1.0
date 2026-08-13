@@ -375,6 +375,16 @@ final class MemoryController: ObservableObject {
     }
     deinit { task?.cancel() }
 
+    /// Clears in-memory drafts and any in-flight image generation.
+    /// Persistence is removed by `AppStoragePaths.resetAllData()` in `AppModel`.
+    func resetAll() {
+        task?.cancel()
+        task = nil
+        drafts = []
+        cards = []
+        generationState = .idle
+    }
+
     @discardableResult
     func makeDraft(
         title: String,

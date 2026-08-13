@@ -126,6 +126,7 @@ struct SceneStageView: View {
             if !deskPet.isFloating {
                 DeskPetPairOverlay(
                     controller: deskPet,
+                    ownController: model.ownDeskPet,
                     partnerProfile: deskPet.activePartnerProfile,
                     partnerName: model.currentDeskPartner?.name,
                     onPartnerDoubleTap: { model.nudgeDeskMate() }

@@ -13,6 +13,7 @@ struct CompactNavigationBar: View {
             }
             CompactNavigationButton(symbol: "chart.bar", title: "此刻") { model.activeSheet = .context }
             CompactNavigationButton(symbol: "photo.on.rectangle", title: "场景") { model.activeSheet = .scenes }
+            CompactNavigationButton(symbol: "gearshape", title: "设置") { model.activeSheet = .settings }
         }
         .padding(6)
         .frame(maxWidth: 520)
@@ -69,6 +70,7 @@ struct SidebarView: View {
             SidebarButton(symbol: "book.closed", title: "回忆") { model.activeSheet = .memoryHistory }
             Spacer()
             SidebarButton(symbol: "photo.on.rectangle.angled", title: "场景") { model.activeSheet = .scenes }
+            SidebarButton(symbol: "gearshape", title: "设置") { model.activeSheet = .settings }
         }
 #if os(macOS)
         .padding(.top, 44)
