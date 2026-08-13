@@ -146,7 +146,7 @@ struct ContextPanelView: View {
 
             HStack(spacing: 8) {
                 PanelButton(title: model.deskActionTitle, symbol: "person.2", isProminent: false) { model.activeSheet = .desk }
-                PanelButton(title: "留一句话", symbol: "mic", isProminent: true) { model.activeSheet = .voice }
+                PanelButton(title: "留声机", symbol: "record.circle", isProminent: true) { model.openPhonograph() }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 18)

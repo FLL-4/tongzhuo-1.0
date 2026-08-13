@@ -1,17 +1,19 @@
 import SwiftUI
 
-struct MemoryArchiveView: View {
+struct MemoryHistoryView: View {
     @ObservedObject var memory: MemoryController
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let cards = memory.cards.filter { $0.reviewState == .confirmed || $0.reviewState == .archived }
-        SheetContainer(eyebrow: "记忆", title: "共同回忆", dismiss: dismiss, maxWidth: 760) {
+        let cards = memory.cards.filter { $0.reviewState == .confirmed }
+        SheetContainer(eyebrow: "记忆", title: "回忆历史", dismiss: dismiss, maxWidth: 760) {
             if cards.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("还没有收藏").font(.system(size: 18, weight: .semibold))
+                    Text("还没有收藏")
+                        .font(.system(size: 18, weight: .semibold))
                     Text("确认后的记忆会像一本册子一样放在这里。")
-                        .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Palette.muted)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 20)
@@ -23,7 +25,7 @@ struct MemoryArchiveView: View {
                             columns: [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 18, alignment: .top)],
                             spacing: 18
                         ) {
-                            ForEach(cards) { card in archiveCard(card) }
+                            ForEach(cards) { card in memoryCard(card) }
                         }
                     }
                     .padding(.bottom, 12)
@@ -49,7 +51,7 @@ struct MemoryArchiveView: View {
         .padding(.horizontal, 2)
     }
 
-    private func archiveCard(_ card: MemoryDraft) -> some View {
+    private func memoryCard(_ card: MemoryDraft) -> some View {
         let template = MemoryCardTemplatePool().template(id: card.imageTemplateID)
         return VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .bottomLeading) {
@@ -106,13 +108,9 @@ struct MemoryArchiveView: View {
             .padding(.horizontal, 2)
 
             HStack(spacing: 8) {
-                if card.reviewState == .archived {
-                    Button("恢复") { memory.restore(card) }.buttonStyle(.bordered)
-                } else {
-                    Button("归档") { memory.archive(card) }.buttonStyle(.bordered)
-                }
                 if card.deliveryState == .delivered {
-                    Button("已打开") { memory.markOpened(card) }.buttonStyle(.bordered)
+                    Button("已打开") { memory.markOpened(card) }
+                        .buttonStyle(.bordered)
                 }
             }
             .font(.system(size: 10))
@@ -126,7 +124,7 @@ struct MemoryArchiveView: View {
     }
 
     private func status(_ card: MemoryDraft) -> String {
-        switch card.reviewState { case .archived: "已归档"; default: deliveryLabel(card.deliveryState) }
+        deliveryLabel(card.deliveryState)
     }
 
     private func deliveryLabel(_ state: MemoryDeliveryState) -> String {

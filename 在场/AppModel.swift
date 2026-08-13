@@ -133,9 +133,8 @@ private extension PresenceSuggestionCategory {
 
 enum AppSheet: String, Identifiable {
     case desk
-    case voice
     case phonograph
-    case memoryArchive
+    case memoryHistory
     case scenes
     case sceneWorkshop
     case context
@@ -347,6 +346,10 @@ final class AppModel: ObservableObject {
             message: "已拍一拍\(partner.name)",
             kind: .sent
         )
+    }
+
+    func openPhonograph() {
+        activeSheet = .phonograph
     }
 
     func handleDemoControlCommand(_ command: DemoControlCommand) {
@@ -1016,7 +1019,7 @@ final class AppModel: ObservableObject {
             mood: .bright,
             observation: "今天的 Todo 已全部完成，可以把今天收尾成一张回忆卡。",
             keyMoment: "今天全部完成的那一刻",
-            delivery: .archiveOnly,
+            delivery: .scheduled,
             sourceEvent: .dailyTodoCompleted,
             creatorName: "我",
             participantNames: [],

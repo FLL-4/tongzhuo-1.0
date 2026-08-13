@@ -125,7 +125,7 @@ final class SceneImageCache {
 #endif
 
 enum SceneImageLocator {
-    /// 查找顺序：用户生成图 → Bundle 根目录 → Bundle 子目录 → Bundle 兜底
+    /// 查找顺序：用户生成图 → Bundle 根目录下的同名资源
     static func url(for relativePath: String) -> URL? {
         if let userURL = SceneAssetStore.shared.url(for: relativePath),
            FileManager.default.fileExists(atPath: userURL.path) {
@@ -133,24 +133,11 @@ enum SceneImageLocator {
         }
 
         let resourceURL = Bundle.main.resourceURL
-        let bundledPath = resourceURL?.appendingPathComponent(relativePath)
-
+        let bundledPath = resourceURL?.appendingPathComponent((relativePath as NSString).lastPathComponent)
         if let bundledPath, FileManager.default.fileExists(atPath: bundledPath.path) {
             return bundledPath
         }
-
-        let path = relativePath as NSString
-        let directory = path.deletingLastPathComponent
-        let fileName = (path.lastPathComponent as NSString).deletingPathExtension
-        let fileExtension = (path.lastPathComponent as NSString).pathExtension
-        if let nestedURL = Bundle.main.url(
-            forResource: fileName,
-            withExtension: fileExtension,
-            subdirectory: directory
-        ) {
-            return nestedURL
-        }
-        return Bundle.main.url(forResource: fileName, withExtension: fileExtension)
+        return nil
     }
 }
 

@@ -16,7 +16,7 @@ enum MemoryMood: String, CaseIterable, Codable, Identifiable {
 }
 
 enum MemoryReviewState: Equatable, Codable {
-    case draft, generating, ready, confirmed, archived, failed(String)
+    case draft, generating, ready, confirmed, failed(String)
 }
 
 enum MemoryGenerationState: Equatable { case idle, generating }
@@ -78,14 +78,13 @@ struct MemoryVoiceAttachment: Identifiable, Equatable, Codable {
 }
 
 enum MemoryDeliveryPlan: String, CaseIterable, Codable, Identifiable {
-    case activityEnd, nextFocusEnd, scheduled, archiveOnly
+    case activityEnd, nextFocusEnd, scheduled
     var id: String { rawValue }
     var title: String {
         switch self {
         case .activityEnd: "活动结束后送达"
         case .nextFocusEnd: "对方下次结束专注后"
         case .scheduled: "指定日期与时间"
-        case .archiveOnly: "仅保存到共同回忆"
         }
     }
     var detail: String {
@@ -93,7 +92,6 @@ enum MemoryDeliveryPlan: String, CaseIterable, Codable, Identifiable {
         case .activityEnd: "这段活动结束后送达"
         case .nextFocusEnd: "对方下一次专注结束后送达"
         case .scheduled: "先保存，之后由你决定时间"
-        case .archiveOnly: "只保存，不发送"
         }
     }
 }
@@ -123,7 +121,6 @@ struct MemoryDraft: Identifiable, Equatable, Codable {
     var deliveryPlan: MemoryDeliveryPlan
     var deliveryState: MemoryDeliveryState
     var imageData: Data?
-    var voiceNoteID: UUID?
     var createdAt: Date
 }
 
@@ -154,7 +151,6 @@ extension MemoryDraft {
         deliveryPlan = try c.decode(MemoryDeliveryPlan.self, forKey: .deliveryPlan)
         deliveryState = try c.decode(MemoryDeliveryState.self, forKey: .deliveryState)
         imageData = try c.decodeIfPresent(Data.self, forKey: .imageData)
-        voiceNoteID = try c.decodeIfPresent(UUID.self, forKey: .voiceNoteID)
         createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
     private enum CodingKeys: String, CodingKey {
@@ -162,7 +158,7 @@ extension MemoryDraft {
              resourceReferences, confirmedAt, deletedAt, title, mood, observation, keyMoment,
              imageTemplateID, imageTemplateName, imagePrompt, suggestedTags, suggestedBGM,
              suggestedDeliveryNote, voiceAttachment, reviewState, deliveryPlan, deliveryState, imageData,
-             voiceNoteID, createdAt
+             createdAt
     }
 }
 
@@ -187,7 +183,6 @@ final class MemoryController: ObservableObject {
     private let imageGenerator: any MemoryImageGenerating
     private let persistence: MemoryPersistence
     private let templatePool = MemoryCardTemplatePool()
-    private var pendingVoiceNoteID: UUID?
     private var task: Task<Void, Never>?
 
     init(imageGenerator: (any MemoryImageGenerating)? = nil, persistence: MemoryPersistence? = nil) {
@@ -252,22 +247,15 @@ final class MemoryController: ObservableObject {
             deliveryPlan: delivery,
             deliveryState: .notScheduled,
             imageData: nil,
-            voiceNoteID: pendingVoiceNoteID,
             createdAt: Date()
         )
-        pendingVoiceNoteID = nil
         drafts.insert(draft, at: 0)
         persist()
     }
 
     func updateDraft(_ draft: MemoryDraft) { replace(&drafts, with: draft); persist() }
     func discardDraft(_ draft: MemoryDraft) { drafts.removeAll { $0.id == draft.id }; persist() }
-    func attachVoiceNote(_ id: UUID) {
-        guard var draft = drafts.first else { pendingVoiceNoteID = id; return }
-        draft.voiceNoteID = id; updateDraft(draft)
-    }
-
-    func updateVoiceAttachment(
+    func attachVoiceAttachment(
         noteID: UUID,
         filename: String,
         duration: TimeInterval,
@@ -335,13 +323,9 @@ final class MemoryController: ObservableObject {
         var card = draft
         card.reviewState = .confirmed
         card.confirmedAt = Date()
-        if let voiceNoteID = card.voiceNoteID,
-           !card.resourceReferences.contains(where: { $0.kind == "voiceNote" && $0.value == voiceNoteID.uuidString }) {
-            card.resourceReferences.append(.init(kind: "voiceNote", value: voiceNoteID.uuidString))
-        }
-        if card.voiceAttachment != nil,
-           !card.resourceReferences.contains(where: { $0.kind == "voiceAttachment" }) {
-            card.resourceReferences.append(.init(kind: "voiceAttachment", value: "recording"))
+        if let voiceAttachment = card.voiceAttachment,
+           !card.resourceReferences.contains(where: { $0.kind == "voiceAttachment" && $0.value == voiceAttachment.noteID.uuidString }) {
+            card.resourceReferences.append(.init(kind: "voiceAttachment", value: voiceAttachment.noteID.uuidString))
         }
         if let templateID = card.imageTemplateID,
            !card.resourceReferences.contains(where: { $0.kind == "imageTemplate" && $0.value == templateID }) {
@@ -352,8 +336,6 @@ final class MemoryController: ObservableObject {
         drafts.removeAll { $0.id == draft.id }
         persist()
     }
-    func archive(_ card: MemoryDraft) { updateCard(card, review: .archived) }
-    func restore(_ card: MemoryDraft) { updateCard(card, review: .confirmed) }
     func markDelivered(_ card: MemoryDraft) { updateCard(card.withDeliveryState(.delivered)) }
     func markOpened(_ card: MemoryDraft) { var x = card; x.deliveryState = .opened; updateCard(x) }
     func advanceDeliveryState(for card: MemoryDraft) {
@@ -362,7 +344,7 @@ final class MemoryController: ObservableObject {
         updateCard(x)
     }
     func syncDeliveryState(for card: MemoryDraft) {
-        updateCard(card.withDeliveryState(card.deliveryPlan == .archiveOnly ? .notScheduled : .delivered))
+        updateCard(card.withDeliveryState(.delivered))
     }
     func deliverCards(for event: MemorySourceEvent, activityID: UUID? = nil, now: Date = Date()) {
         for card in cards where card.reviewState == .confirmed {
@@ -383,8 +365,6 @@ final class MemoryController: ObservableObject {
                 updateCard(updated)
             case .scheduled:
                 continue
-            case .archiveOnly:
-                continue
             }
         }
     }
@@ -394,7 +374,7 @@ final class MemoryController: ObservableObject {
     private func replace(_ list: inout [MemoryDraft], with item: MemoryDraft) { list.removeAll { $0.id == item.id }; list.insert(item, at: 0) }
     private func persist() { try? persistence.save(drafts: drafts, cards: cards) }
 
-    /// 已确认和已归档的记忆卡片，按创建时间从新到旧排列，供历史列表展示。
+    /// 已确认的记忆卡片，按创建时间从新到旧排列，供历史列表展示。
     var history: [MemoryDraft] {
         cards.sorted { $0.createdAt > $1.createdAt }
     }
@@ -406,8 +386,6 @@ final class MemoryController: ObservableObject {
 
     private func deliveryState(for card: MemoryDraft) -> MemoryDeliveryState {
         switch card.deliveryPlan {
-        case .archiveOnly:
-            return .notScheduled
         case .activityEnd:
             return card.sourceEvent == .activityEnded ? .delivered : .scheduled
         case .nextFocusEnd:

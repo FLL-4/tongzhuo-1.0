@@ -25,12 +25,10 @@ struct AppShellView: View {
             switch sheet {
             case .desk:
                 DeskSheet(model: model)
-            case .voice:
-                VoiceSheet(model: model, recorder: model.voiceRecorder, memory: model.memory)
             case .phonograph:
-                PhonographSheet(model: model, memory: model.memory)
-            case .memoryArchive:
-                MemoryArchiveView(memory: model.memory)
+                PhonographSheet(model: model, memory: model.memory, recorder: model.voiceRecorder)
+            case .memoryHistory:
+                MemoryHistoryView(memory: model.memory)
             case .scenes:
                 ScenePickerSheet(model: model)
             case .sceneWorkshop:

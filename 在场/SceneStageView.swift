@@ -202,8 +202,8 @@ private struct PartnerPopover: View {
 
             Divider().overlay(Palette.line)
 
-            PopoverAction(title: "留一句话", symbol: "mic") {
-                open(.voice)
+            PopoverAction(title: "留声机", symbol: "record.circle") {
+                open(.phonograph)
             }
             PopoverAction(title: "查看同桌房间", symbol: "person.2") {
                 open(.desk)

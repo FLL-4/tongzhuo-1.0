@@ -60,13 +60,6 @@ struct AppModelTests {
         let ready = try #require(controller.drafts.first)
         controller.confirm(ready)
         #expect(controller.cards.first?.reviewState == .confirmed)
-
-        let confirmed = try #require(controller.cards.first)
-        controller.archive(confirmed)
-        #expect(controller.cards.first?.reviewState == .archived)
-
-        controller.restore(try #require(controller.cards.first))
-        #expect(controller.cards.first?.reviewState == .confirmed)
     }
 
     @Test("文本、图像和抠图配置彼此独立")
@@ -132,7 +125,7 @@ struct AppModelTests {
 
         #expect(controller.state == .ready)
         #expect(controller.partnerProfile?.partnerName == "阿禾")
-        #expect(controller.activeProfile == nil)
+        #expect(controller.activePartnerProfile == nil)
 
         controller.setActivePartner(.ahe)
         #expect(controller.activePartnerProfile?.partnerID == DeskPartner.ahe.id)

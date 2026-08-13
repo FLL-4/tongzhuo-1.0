@@ -47,7 +47,7 @@ struct SidebarView: View {
             SidebarButton(symbol: "house", title: "在场", isActive: true) {}
             SidebarButton(symbol: "person.2", title: "同桌") { model.activeSheet = .desk }
             SidebarButton(symbol: "record.circle", title: "留声") { model.activeSheet = .phonograph }
-            SidebarButton(symbol: "book.closed", title: "记忆") { model.activeSheet = .memoryArchive }
+            SidebarButton(symbol: "book.closed", title: "回忆") { model.activeSheet = .memoryHistory }
             Spacer()
             SidebarButton(symbol: "photo.on.rectangle.angled", title: "场景") { model.activeSheet = .scenes }
         }
