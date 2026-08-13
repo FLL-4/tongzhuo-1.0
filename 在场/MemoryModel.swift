@@ -520,7 +520,8 @@ final class MemoryController: ObservableObject {
     func deliverCards(for event: MemorySourceEvent, activityID: UUID? = nil, now: Date = Date()) {
         for card in cards where card.reviewState == .confirmed {
             guard card.deliveryState == .scheduled || card.deliveryState == .notScheduled else { continue }
-            switch card.deliveryPlan {
+            let deliveryPlan: MemoryDeliveryPlan = card.deliveryPlan
+            switch deliveryPlan {
             case .oneHourLater:
                 guard event == .activityEnded else { continue }
                 guard activityID == nil || card.sourceActivityID == activityID || card.sourceActivityID == nil else { continue }
@@ -555,7 +556,8 @@ final class MemoryController: ObservableObject {
     }
 
     private func deliveryState(for card: MemoryDraft) -> MemoryDeliveryState {
-        switch card.deliveryPlan {
+        let deliveryPlan: MemoryDeliveryPlan = card.deliveryPlan
+        switch deliveryPlan {
         case .oneHourLater:
             return .scheduled
         case .dailyTodoCompleted:

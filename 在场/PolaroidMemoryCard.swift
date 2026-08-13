@@ -48,8 +48,9 @@ struct PolaroidMemoryCard: View {
                         )
                     )
                     .overlay {
-                        AppGlyph(.phonograph, size: 58)
-                            .foregroundStyle(Palette.amber.opacity(0.72))
+                        PhonographArtwork(variant: .cardPlaceholder)
+                            .padding(12)
+                            .accessibilityHidden(true)
                     }
             }
         }
