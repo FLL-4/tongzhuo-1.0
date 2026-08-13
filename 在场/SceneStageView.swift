@@ -26,23 +26,13 @@ struct SceneStageView: View {
         ZStack {
             SceneNativeRenderer(model: model)
 
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(model.selectedScene.eyebrow)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Palette.amberSoft)
-                        .textCase(.uppercase)
-                    Text(model.selectedScene.headline)
-                        .font(.system(size: layout == .compact ? 21 : 25, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: layout == .compact ? 255 : nil, alignment: .leading)
-                    if let room = model.currentDeskRoom {
-                        Text(room.code)
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.62))
-                            .padding(.leading, 2)
-                    }
-                }
+            VStack(alignment: .leading, spacing: 10) {
+                SceneStageHeader(
+                    eyebrow: model.selectedScene.eyebrow,
+                    headline: model.selectedScene.headline,
+                    roomCode: model.currentDeskRoom?.code,
+                    layout: layout
+                )
 
                 if model.activeFocusSession != nil {
                     Button {
@@ -231,6 +221,47 @@ private struct PartnerPopover: View {
             try? await Task.sleep(for: .milliseconds(120))
             model.activeSheet = sheet
         }
+    }
+}
+
+private struct SceneStageHeader: View {
+    let eyebrow: String
+    let headline: String
+    let roomCode: String?
+    let layout: SceneStageLayout
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(eyebrow)
+                    .eyebrowStyle()
+                Spacer(minLength: 8)
+                if let roomCode {
+                    Text("房间 \(roomCode)")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Palette.muted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.white.opacity(0.07), in: Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
+                }
+            }
+
+            Text(headline)
+                .font(.system(size: layout == .compact ? 20 : 24, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.16), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.20), radius: 14, y: 4)
+        .frame(maxWidth: layout == .compact ? 310 : 380, alignment: .leading)
     }
 }
 
