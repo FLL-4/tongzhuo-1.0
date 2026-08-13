@@ -328,6 +328,57 @@ final class AppModel: ObservableObject {
         )
     }
 
+    func handleDemoControlCommand(_ command: DemoControlCommand) {
+        switch command.type {
+        case .advanceTime:
+            guard let seconds = command.seconds else { return }
+            advanceDemoTime(by: seconds)
+        case .receiveNudge:
+            receiveDemoNudge()
+        }
+    }
+
+    private func advanceDemoTime(by seconds: Int) {
+        guard seconds > 0 else { return }
+        let interval = TimeInterval(seconds)
+
+        if let timerEndDate {
+            self.timerEndDate = timerEndDate.addingTimeInterval(-interval)
+        }
+        if let lastNudgeSentAt {
+            self.lastNudgeSentAt = lastNudgeSentAt.addingTimeInterval(-interval)
+        }
+        scheduledSuggestions = scheduledSuggestions.mapValues { scheduled in
+            ScheduledPresenceSuggestion(
+                dueAt: scheduled.dueAt.addingTimeInterval(-interval),
+                suggestion: scheduled.suggestion
+            )
+        }
+        if timerRunning {
+            presenceSeconds += min(seconds, remainingSeconds)
+            updateRemainingTime()
+            if remainingSeconds == 0 {
+                completeFocusSession()
+                return
+            }
+        }
+        refreshSuggestions()
+    }
+
+    private func receiveDemoNudge() {
+        guard let partner = currentDeskPartner else {
+            showToast("当前没有同桌，无法模拟收到拍一拍")
+            return
+        }
+        deskPet.presentNudgeFeedback(
+            message: "\(partner.name)拍了拍你",
+            kind: .received
+        )
+        if deskPet.profile?.isEnabled != true {
+            showToast("\(partner.name)拍了拍你")
+        }
+    }
+
     var selectedScene: RoomScene {
         scenes.first(where: { $0.id == selectedSceneID }) ?? RoomSceneCatalog.focusScene
     }
