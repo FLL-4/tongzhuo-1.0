@@ -611,7 +611,7 @@ final class AppModel: ObservableObject {
                 let room = try await deskRoomService.createRoom()
                 guard !Task.isCancelled else { return }
                 deskSession = .connected(room)
-                schedulePartnerReadySuggestion(for: room)
+                scheduleWaitingSuggestion(for: room)
                 refreshSuggestions()
                 showToast("Demo 房间已经准备好")
             } catch {
@@ -798,13 +798,19 @@ final class AppModel: ObservableObject {
         cancelSuggestions(in: .focusPaused, .timerReset)
         lastActivityEndedEvent = focusSessionService.endSession(session, reason: reason)
 
-        let partner = currentDeskPartner
-        offerSuggestion(PresenceSuggestion(
-            message: partner.map { "这一段已经完成。要给\($0.name)留一句话吗？" }
-                ?? "这一段已经完成。要留下一句话吗？",
-            primaryOption: PresenceSuggestionOption(title: "打开留声机", action: .openVoiceRecorder),
-            context: .focusCompleted(partnerID: partner?.id)
-        ))
+        if let partner = currentDeskPartner {
+            offerSuggestion(PresenceSuggestion(
+                message: "这一段已经完成。要给\(partner.name)留一句话吗？",
+                primaryOption: PresenceSuggestionOption(title: "打开留声机", action: .openVoiceRecorder),
+                context: .focusCompleted(partnerID: partner.id)
+            ))
+        } else {
+            offerSuggestion(PresenceSuggestion(
+                message: "这一段已经完成，先休息一会儿。",
+                primaryOption: PresenceSuggestionOption(title: "休息一下", action: .beginRest),
+                context: .focusCompleted(partnerID: nil)
+            ))
+        }
     }
 
     private func scheduleWaitingSuggestion(for room: DeskRoom) {

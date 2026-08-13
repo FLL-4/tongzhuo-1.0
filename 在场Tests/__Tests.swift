@@ -384,16 +384,16 @@ struct AppModelTests {
         #expect(model.remainingSeconds == 25 * 60)
     }
 
-    @Test("创建房间后进入固定 Demo 房间")
+    @Test("创建房间后进入等待状态")
     @MainActor
-    func creatingDeskConnectsPartner() async throws {
+    func creatingDeskWaitsForPartner() async throws {
         let model = AppModel()
 
         model.createDeskRoom()
         try await waitUntil { model.currentDeskRoom != nil }
 
         #expect(model.currentDeskRoom != nil)
-        #expect(model.currentDeskPartner == .ahe)
+        #expect(model.currentDeskPartner == nil)
         #expect(model.currentDeskRoom?.code == "DEMO-ROOM")
         #expect(model.deskActionTitle == "邀请同桌")
     }
@@ -553,7 +553,7 @@ struct AppModelTests {
         #expect(candidateScenes == RoomSceneCatalog.builtIn)
     }
 
-    @Test("手动结束只产生一次事件并引导留声机")
+    @Test("空房中手动结束只产生一次事件并建议休息")
     @MainActor
     func manuallyEndingFocusIsIdempotent() async throws {
         let model = AppModel()
@@ -568,15 +568,15 @@ struct AppModelTests {
 
         #expect(event.reason == .manuallyEnded)
         #expect(model.lastActivityEndedEvent == event)
-        #expect(model.activeSuggestion?.primaryOption.action == .openVoiceRecorder)
+        #expect(model.activeSuggestion?.primaryOption.action == .beginRest)
         #expect(model.activeFocusSession == nil)
     }
 
-    @Test("计时结束产生对应事件并引导留声机")
+    @Test("有同桌时计时结束产生对应事件并引导留声机")
     @MainActor
     func timerCompletionEndsActiveSession() async throws {
         let model = AppModel()
-        model.createDeskRoom()
+        model.joinDesk(code: "demo")
         try await waitUntil { model.currentDeskRoom != nil }
         let task = try #require(model.tasks.first { !$0.isCompleted })
         #expect(model.beginDeskFocus(durationMinutes: 15, taskID: task.id))
@@ -600,7 +600,7 @@ struct AppModelTests {
         model.resetTimer()
 
         #expect(model.lastActivityEndedEvent?.reason == .manuallyEnded)
-        #expect(model.activeSuggestion?.primaryOption.action == .openVoiceRecorder)
+        #expect(model.activeSuggestion?.primaryOption.action == .beginRest)
         #expect(model.activeFocusSession == nil)
     }
 
@@ -619,7 +619,7 @@ struct AppModelTests {
         #expect(model.activeFocusSession != nil)
     }
 
-    @Test("离开活动房间按手动结束并保留留声机引导")
+    @Test("离开活动房间按手动结束并建议休息")
     @MainActor
     func leavingDeskEndsActiveSession() async throws {
         let model = AppModel()
@@ -632,7 +632,7 @@ struct AppModelTests {
 
         #expect(model.currentDeskRoom == nil)
         #expect(model.lastActivityEndedEvent?.reason == .manuallyEnded)
-        #expect(model.activeSuggestion?.primaryOption.action == .openVoiceRecorder)
+        #expect(model.activeSuggestion?.primaryOption.action == .beginRest)
         #expect(model.activeFocusSession == nil)
     }
 
@@ -1018,15 +1018,15 @@ private final class AmbientAudioSpy: AmbientAudioControlling {
 @Suite("同桌房间服务")
 struct DeskRoomServiceTests {
 
-    @Test("创建和任意邀请码进入同一 Demo 房间")
-    func fixedRoom() async throws {
+    @Test("创建空房，加入房间时 Mock 同桌")
+    func roomPartnerDependsOnEntryFlow() async throws {
         let service = MockDeskRoomService()
 
         let created = try await service.createRoom()
         let joined = try await service.joinRoom(inviteCode: "  任意邀请码  ")
 
         #expect(created.id == joined.id)
-        #expect(created.partner == .ahe)
+        #expect(created.partner == nil)
         #expect(joined.partner == .ahe)
         #expect(joined.code == "任意邀请码")
     }
