@@ -118,7 +118,6 @@ struct AppModelTests {
         #expect(controller.partnerProfile?.partnerName == "阿禾")
         #expect(controller.activeProfile == nil)
 
-        controller.setEnabled(true)
         controller.setActivePartner(.ahe)
         #expect(controller.activePartnerProfile?.partnerID == DeskPartner.ahe.id)
 
@@ -142,7 +141,6 @@ struct AppModelTests {
         controller.selectPhoto(Data([0x01]), for: .ahe)
         controller.generate()
         try await Task.sleep(for: .milliseconds(20))
-        controller.setEnabled(true)
         controller.setActivePartner(.ahe)
 
         let restored = DeskPetController(
@@ -165,7 +163,6 @@ struct AppModelTests {
         controller.selectPhoto(Data([0x01, 0x02]), for: .ahe)
         controller.generate()
         try await Task.sleep(for: .milliseconds(20))
-        controller.setEnabled(true)
         controller.setActivePartner(.ahe)
 
         let window = NSWindow(

@@ -577,12 +577,6 @@ final class DeskPetController: ObservableObject {
         }
     }
 
-    func setEnabled(_ enabled: Bool) {
-        guard partnerProfile != nil else { return }
-        partnerProfile?.isEnabled = enabled
-        persistCurrentProfile()
-    }
-
     func presentNudgeFeedback(message: String, kind: DeskPetNudgeFeedbackKind) {
         nudgeFeedbackTask?.cancel()
         let feedback = DeskPetNudgeFeedback(message: message, kind: kind)
