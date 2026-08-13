@@ -446,6 +446,10 @@ final class DeskPetController: ObservableObject {
     @Published private(set) var profile: DeskPetProfile?
     @Published var isFloating: Bool = false
     @Published private(set) var nudgeFeedback: DeskPetNudgeFeedback?
+    /// 桌宠在场景内被拖拽到的位置（场景本地坐标）。为空时使用默认右下角。
+    @Published var scenePosition: CGPoint?
+    /// 当前正在同桌房间中的好友 ID。只有与桌宠归属的好友同桌时才显示桌宠。
+    @Published var activePartnerID: DeskPartner.ID?
 
     private let generator: any DeskPetGenerating
     private let persistence: DeskPetPersistence
@@ -475,6 +479,8 @@ final class DeskPetController: ObservableObject {
 
     var activeProfile: DeskPetProfile? {
         guard let profile, profile.isEnabled else { return nil }
+        // 只有当前正在与桌宠归属的好友同桌时才显示
+        guard profile.partnerID == activePartnerID else { return nil }
         return profile
     }
 

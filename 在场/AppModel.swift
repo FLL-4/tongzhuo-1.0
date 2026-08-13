@@ -213,7 +213,9 @@ final class AppModel: ObservableObject {
     @Published var presenceSeconds = 42 * 60
     @Published var activeSheet: AppSheet?
     @Published var toastMessage: String?
-    @Published var deskSession: DeskSessionState = .disconnected
+    @Published var deskSession: DeskSessionState = .disconnected {
+        didSet { deskPet.activePartnerID = currentDeskPartner?.id }
+    }
     @Published var deskErrorMessage: String?
     @Published private(set) var activeSuggestion: PresenceSuggestion?
     @Published private(set) var activeFocusSession: FocusSession?
