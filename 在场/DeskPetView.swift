@@ -135,17 +135,6 @@ struct DeskPetSection: View {
                         Spacer(minLength: 4)
                     }
 
-                    HStack(spacing: 8) {
-                        DeskPetPhotoPicker(selection: $photoItem) { data in
-                            controller.selectPhoto(data, for: partner)
-                        } label: {
-                            Label("更换好友形象", systemImage: "arrow.triangle.2.circlepath")
-                                .frame(maxWidth: .infinity, minHeight: 34)
-                        }
-                        .accessibilityLabel("更换好友桌宠形象")
-                        .buttonStyle(.bordered)
-
-                    }
                 }
             }
         }
