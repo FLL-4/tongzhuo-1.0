@@ -174,14 +174,15 @@ struct MockMemoryImageGenerator: MemoryImageGenerating {
 }
 
 struct HybridMemoryImageGenerator: MemoryImageGenerating {
-    private let configuration: APIConfiguration
+    private let injectedConfiguration: APIConfiguration?
     private let mock = MockMemoryImageGenerator()
 
-    init(configuration: APIConfiguration = .load()) {
-        self.configuration = configuration
+    init(configuration: APIConfiguration? = nil) {
+        self.injectedConfiguration = configuration
     }
 
     func generate(prompt: String) async throws -> Data {
+        let configuration = injectedConfiguration ?? .load()
         guard configuration.isMemoryImageGenerationConfigured else {
             return try await mock.generate(prompt: prompt)
         }
@@ -203,13 +204,13 @@ private struct RemoteMemoryImageGenerator: MemoryImageGenerating {
 
     private func generateDashScope(prompt: String) async throws -> Data {
         let payload = MemoryDashScopeImageRequest(
-            model: configuration.image.sceneModel.isEmpty ? configuration.image.model : configuration.image.sceneModel,
+            model: configuration.image.memoryCardModel,
             input: .init(messages: [.init(role: "user", content: [.text(prompt)])]),
             parameters: .init(
                 count: 1,
                 watermark: false,
                 promptExtend: false,
-                size: configuration.image.size.replacingOccurrences(of: "x", with: "*")
+                size: configuration.image.memoryCardSize.replacingOccurrences(of: "x", with: "*")
             )
         )
         var request = URLRequest(url: try endpointURL(configuration.image.endpoint))
@@ -227,9 +228,9 @@ private struct RemoteMemoryImageGenerator: MemoryImageGenerating {
     private func generateOpenAI(prompt: String) async throws -> Data {
         let endpoint = configuration.image.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/images/generations"
         let payload = MemoryOpenAIImageRequest(
-            model: configuration.image.model,
+            model: configuration.image.memoryCardModel,
             prompt: prompt,
-            size: configuration.image.size,
+            size: configuration.image.memoryCardSize,
             responseFormat: "b64_json"
         )
         var request = URLRequest(url: try endpointURL(endpoint))

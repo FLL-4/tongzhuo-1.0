@@ -28,10 +28,15 @@ struct APIConfiguration: Equatable {
         var apiKey = ""
         var baseURL = ""
         var endpoint = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
-        var model = "qwen-image-edit-plus"
-        var size = "1024x1024"
+        /// Photo-to-character image editing for the user's and partner's desk pets.
+        var deskPetModel = "qwen-image-edit-plus"
+        var deskPetSize = "1024x1024"
+        /// Text-to-image generation for the room background, without characters.
         var sceneModel = "qwen-image-3.0"
         var sceneSize = "1664x928"
+        /// Text-to-image generation for a square phonograph memory card.
+        var memoryCardModel = "qwen-image-3.0"
+        var memoryCardSize = "1024x1024"
 
         var isConfigured: Bool {
             guard !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
@@ -71,10 +76,10 @@ struct APIConfiguration: Equatable {
             && !image.sceneModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     var isDeskPetImageGenerationConfigured: Bool {
-        image.isConfigured && !image.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        image.isConfigured && !image.deskPetModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     var isMemoryImageGenerationConfigured: Bool {
-        image.isConfigured && !image.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        image.isConfigured && !image.memoryCardModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     static var defaultURL: URL {
@@ -106,10 +111,12 @@ struct APIConfiguration: Equatable {
         configuration.image.apiKey = values["image.api_key"] ?? configuration.image.apiKey
         configuration.image.baseURL = values["image.base_url"] ?? configuration.image.baseURL
         configuration.image.endpoint = values["image.endpoint"] ?? configuration.image.endpoint
-        configuration.image.model = values["image.model"] ?? configuration.image.model
-        configuration.image.size = values["image.size"] ?? configuration.image.size
+        configuration.image.deskPetModel = values["image.desk_pet_model"] ?? configuration.image.deskPetModel
+        configuration.image.deskPetSize = values["image.desk_pet_size"] ?? configuration.image.deskPetSize
         configuration.image.sceneModel = values["image.scene_model"] ?? configuration.image.sceneModel
         configuration.image.sceneSize = values["image.scene_size"] ?? configuration.image.sceneSize
+        configuration.image.memoryCardModel = values["image.memory_card_model"] ?? configuration.image.memoryCardModel
+        configuration.image.memoryCardSize = values["image.memory_card_size"] ?? configuration.image.memoryCardSize
 
         if let value = values["matting.provider"], let provider = Matting.Provider(rawValue: value.lowercased()) {
             configuration.matting.provider = provider
@@ -144,10 +151,12 @@ struct APIConfiguration: Equatable {
         lines.append("  api_key: \(quote(image.apiKey))")
         lines.append("  base_url: \(quote(image.baseURL))")
         lines.append("  endpoint: \(quote(image.endpoint))")
-        lines.append("  model: \(quote(image.model))")
-        lines.append("  size: \(quote(image.size))")
+        lines.append("  desk_pet_model: \(quote(image.deskPetModel))")
+        lines.append("  desk_pet_size: \(quote(image.deskPetSize))")
         lines.append("  scene_model: \(quote(image.sceneModel))")
         lines.append("  scene_size: \(quote(image.sceneSize))")
+        lines.append("  memory_card_model: \(quote(image.memoryCardModel))")
+        lines.append("  memory_card_size: \(quote(image.memoryCardSize))")
         lines.append("")
         lines.append("matting:")
         lines.append("  provider: \(quote(matting.provider.rawValue))")

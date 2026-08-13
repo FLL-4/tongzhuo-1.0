@@ -160,7 +160,7 @@ struct SettingsSheet: View {
     }
 
     private var imageModelSection: some View {
-        section(title: "图像模型", subtitle: "用于生成桌宠形象与场景背景") {
+        section(title: "图像模型", subtitle: "三类图像任务分别使用独立模型") {
             providerPicker(selection: $config.image.provider)
             secureField("API Key", text: $config.image.apiKey)
             if config.image.provider == .openAI {
@@ -168,10 +168,15 @@ struct SettingsSheet: View {
             } else {
                 field("Endpoint", text: $config.image.endpoint, placeholder: "https://dashscope.aliyuncs.com/...")
             }
-            field("桌宠模型 Model", text: $config.image.model, placeholder: "qwen-image-edit-plus")
-            field("桌宠尺寸 Size", text: $config.image.size, placeholder: "1024x1024")
-            field("场景模型 Scene Model", text: $config.image.sceneModel, placeholder: "qwen-image-3.0")
-            field("场景尺寸 Scene Size", text: $config.image.sceneSize, placeholder: "1664x928")
+            subsectionTitle("桌宠形象", detail: "根据人物照片生成可叠加的透明角色")
+            field("桌宠形象模型", text: $config.image.deskPetModel, placeholder: "qwen-image-edit-plus")
+            field("桌宠形象尺寸", text: $config.image.deskPetSize, placeholder: "1024x1024")
+            subsectionTitle("场景背景", detail: "根据场景描述生成无人物的 16:9 房间背景")
+            field("场景背景模型", text: $config.image.sceneModel, placeholder: "qwen-image-3.0")
+            field("场景背景尺寸", text: $config.image.sceneSize, placeholder: "1664x928")
+            subsectionTitle("留声卡片", detail: "根据留声内容生成方形记忆插图")
+            field("留声卡片模型", text: $config.image.memoryCardModel, placeholder: "qwen-image-3.0")
+            field("留声卡片尺寸", text: $config.image.memoryCardSize, placeholder: "1024x1024")
         }
     }
 
@@ -231,6 +236,18 @@ struct SettingsSheet: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 12))
         }
+    }
+
+    private func subsectionTitle(_ title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.amberSoft)
+            Text(detail)
+                .font(.system(size: 9))
+                .foregroundStyle(Palette.muted)
+        }
+            .padding(.top, 4)
     }
 
     private func providerPicker(selection: Binding<APIConfiguration.Provider>) -> some View {

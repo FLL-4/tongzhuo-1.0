@@ -74,8 +74,12 @@ struct AppModelTests {
           provider: dashscope
           api_key: image-secret
           endpoint: https://image.example.com/api/v1/generation
-          model: image-model
-          size: 1024x1024
+          desk_pet_model: desk-pet-model
+          desk_pet_size: 1024x1024
+          scene_model: scene-model
+          scene_size: 1664x928
+          memory_card_model: memory-card-model
+          memory_card_size: 1024x1024
         matting:
           provider: removebg
           api_key: matting-secret
@@ -85,7 +89,14 @@ struct AppModelTests {
         #expect(configuration.text.apiKey == "text-secret")
         #expect(configuration.text.model == "text-model")
         #expect(configuration.image.apiKey == "image-secret")
-        #expect(configuration.image.model == "image-model")
+        #expect(configuration.image.deskPetModel == "desk-pet-model")
+        #expect(configuration.image.deskPetSize == "1024x1024")
+        #expect(configuration.image.sceneModel == "scene-model")
+        #expect(configuration.image.sceneSize == "1664x928")
+        #expect(configuration.image.memoryCardModel == "memory-card-model")
+        #expect(configuration.image.memoryCardSize == "1024x1024")
+        let restored = APIConfiguration.from(yaml: configuration.yamlString)
+        #expect(restored.image == configuration.image)
         #expect(configuration.matting.provider == .removeBG)
         #expect(configuration.matting.apiKey == "matting-secret")
         #expect(configuration.matting.isConfigured)

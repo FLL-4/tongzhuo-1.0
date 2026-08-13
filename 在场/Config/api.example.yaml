@@ -13,10 +13,12 @@ image:
   api_key: ""
   base_url: ""
   endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
-  model: qwen-image-edit-plus
-  size: 1024x1024
+  desk_pet_model: qwen-image-edit-plus
+  desk_pet_size: 1024x1024
   scene_model: qwen-image-3.0
   scene_size: 1664x928
+  memory_card_model: qwen-image-3.0
+  memory_card_size: 1024x1024
 
 # Optional remove.bg post-processing. It turns the generated image into a
 # transparent desk-pet foreground.

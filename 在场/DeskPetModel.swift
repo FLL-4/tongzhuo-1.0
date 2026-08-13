@@ -285,7 +285,7 @@ struct RemoteDeskPetGenerator: DeskPetGenerating {
 
     private func generateDashScope(photoData: Data, partnerName: String) async throws -> Data {
         let payload = DashScopeRequest(
-            model: configuration.image.model,
+            model: configuration.image.deskPetModel,
             input: .init(messages: [.init(role: "user", content: [
                 .image("data:image/png;base64,\(photoData.base64EncodedString())"),
                 .text(Self.prompt(for: partnerName))
@@ -294,7 +294,7 @@ struct RemoteDeskPetGenerator: DeskPetGenerating {
                 count: 1,
                 watermark: false,
                 promptExtend: true,
-                size: configuration.image.size.replacingOccurrences(of: "x", with: "*")
+                size: configuration.image.deskPetSize.replacingOccurrences(of: "x", with: "*")
             )
         )
         var request = URLRequest(url: try endpointURL(configuration.image.endpoint))
@@ -313,9 +313,9 @@ struct RemoteDeskPetGenerator: DeskPetGenerating {
         let url = try endpointURL(configuration.image.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/images/edits")
         let boundary = "Boundary-\(UUID().uuidString)"
         var body = Data()
-        appendMultipart(&body, boundary: boundary, name: "model", value: configuration.image.model)
+        appendMultipart(&body, boundary: boundary, name: "model", value: configuration.image.deskPetModel)
         appendMultipart(&body, boundary: boundary, name: "prompt", value: Self.prompt(for: partnerName))
-        appendMultipart(&body, boundary: boundary, name: "size", value: configuration.image.size)
+        appendMultipart(&body, boundary: boundary, name: "size", value: configuration.image.deskPetSize)
         appendMultipart(&body, boundary: boundary, name: "image", filename: "friend-photo.png", mimeType: "image/png", data: photoData)
         body.append(Data("--\(boundary)--\r\n".utf8))
 

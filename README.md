@@ -27,10 +27,12 @@ image:
   api_key: "YOUR_DASHSCOPE_API_KEY"
   base_url: ""
   endpoint: https://your-dashscope-workspace.example/api/v1/services/aigc/multimodal-generation/generation
-  model: qwen-image-edit-plus
-  size: 1024x1024
+  desk_pet_model: qwen-image-edit-plus
+  desk_pet_size: 1024x1024
   scene_model: qwen-image-3.0
   scene_size: 1664x928
+  memory_card_model: qwen-image-3.0
+  memory_card_size: 1024x1024
 
 matting:
   provider: removebg
@@ -41,8 +43,9 @@ matting:
 配置职责：
 
 - `text`：OpenAI-compatible `/chat/completions`，用于文本整理和后续在场建议。
-- `image.model`：DashScope 图像编辑模型，用于好友照片生成桌宠。
-- `image.scene_model`：DashScope 文字生图模型，用于生成无人物场景背景。
+- `image.desk_pet_model`：图像编辑模型，用于根据照片生成好友或自己的桌宠形象。
+- `image.scene_model`：文字生图模型，用于生成无人物场景背景。
+- `image.memory_card_model`：图像生成模型，用于生成留声机记忆卡片。
 - `matting`：remove.bg，用于把生成图片处理成透明 PNG；不配置时仍可生图，但结果可能带背景。
 
 三个服务相互独立，不要把文本模型 Key 当作图像 Key 使用。
