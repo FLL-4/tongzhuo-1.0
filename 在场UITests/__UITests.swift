@@ -29,13 +29,7 @@ final class __UITests: XCTestCase {
     func testJoinConfigureAndStartFocus() throws {
         let app = launchApp()
 
-        app.buttons["同桌"].click()
-        let inviteCode = app.textFields["输入任意邀请码"]
-        XCTAssertTrue(inviteCode.waitForExistence(timeout: 3))
-        inviteCode.click()
-        inviteCode.typeText("demo")
-        app.buttons["加入房间"].click()
-
+        app.buttons["开始"].click()
         XCTAssertTrue(app.staticTexts["准备这一段专注"].waitForExistence(timeout: 3))
         app.buttons["选择 Todo：补齐方案最后两页"].click()
         app.buttons["开始这一段专注"].click()
@@ -77,12 +71,7 @@ final class __UITests: XCTestCase {
 
     @MainActor
     private func startFocus(in app: XCUIApplication) {
-        app.buttons["同桌"].click()
-        let inviteCode = app.textFields["输入任意邀请码"]
-        XCTAssertTrue(inviteCode.waitForExistence(timeout: 3))
-        inviteCode.click()
-        inviteCode.typeText("demo")
-        app.buttons["加入房间"].click()
+        app.buttons["开始"].click()
         XCTAssertTrue(app.staticTexts["准备这一段专注"].waitForExistence(timeout: 3))
         app.buttons["选择 Todo：补齐方案最后两页"].click()
         app.buttons["开始这一段专注"].click()

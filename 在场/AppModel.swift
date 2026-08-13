@@ -132,6 +132,7 @@ private extension PresenceSuggestionCategory {
 }
 
 enum AppSheet: String, Identifiable {
+    case start
     case desk
     case phonograph
     case memoryHistory
@@ -521,46 +522,32 @@ final class AppModel: ObservableObject {
         ))
     }
 
-    func beginFocusSession() {
-        presence = .focus
-        remainingSeconds = 25 * 60
-        timerRunning = true
-        timerEndDate = Date().addingTimeInterval(TimeInterval(remainingSeconds))
-        markOwnFocusStarted()
-        showToast("台灯已亮起，25 分钟从现在开始")
+    @discardableResult
+    func startFocus(durationMinutes: Int, taskID: FocusTask.ID) -> Bool {
+        startFocus(durationMinutes: durationMinutes, taskIDs: [taskID], customTaskTitle: nil)
     }
 
     @discardableResult
-    func beginDeskFocus(durationMinutes: Int, taskID: FocusTask.ID) -> Bool {
-        beginDeskFocus(durationMinutes: durationMinutes, taskIDs: [taskID], customTaskTitle: nil, sceneID: nil)
-    }
-
-    @discardableResult
-    func beginDeskFocus(
+    func startFocus(
         durationMinutes: Int,
         taskIDs: Set<FocusTask.ID>,
-        customTaskTitle rawCustomTaskTitle: String?,
-        sceneID: RoomScene.ID?
+        customTaskTitle rawCustomTaskTitle: String?
     ) -> Bool {
         let selectableTaskIDs = Set(incompleteTasks.map(\.id))
-        guard let room = currentDeskRoom,
-              taskIDs.isSubset(of: selectableTaskIDs),
-              sceneID.map({ selectedID in scenes.contains(where: { $0.id == selectedID }) }) ?? true else { return false }
+        guard activeFocusSession == nil,
+              taskIDs.isSubset(of: selectableTaskIDs) else { return false }
         let customTaskTitle = rawCustomTaskTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedCustomTaskTitle = customTaskTitle?.isEmpty == false ? customTaskTitle : nil
 
         do {
             let session = try focusSessionService.startSession(
-                roomID: room.id,
+                roomID: currentDeskRoom?.id,
                 configuration: FocusSessionConfiguration(
                     durationMinutes: durationMinutes,
                     taskIDs: Array(taskIDs),
-                    customTaskTitle: normalizedCustomTaskTitle,
-                    sceneID: sceneID
-                ),
-                candidateScenes: RoomSceneCatalog.builtIn
+                    customTaskTitle: normalizedCustomTaskTitle
+                )
             )
-            guard let scene = scenes.first(where: { $0.id == session.sceneID }) else { return false }
 
             activeFocusSession = session
             lastActivityEndedEvent = nil
@@ -568,7 +555,6 @@ final class AppModel: ObservableObject {
             remainingSeconds = session.durationSeconds
             timerRunning = true
             timerEndDate = Date().addingTimeInterval(TimeInterval(session.durationSeconds))
-            selectScene(scene)
             markOwnFocusStarted()
             showToast("已经开始 \(durationMinutes) 分钟专注")
             return true
@@ -750,13 +736,6 @@ final class AppModel: ObservableObject {
         deskSession = .disconnected
         deskPet.clear()
         deskErrorMessage = nil
-        if activeFocusSession != nil {
-            endFocusSession(reason: .manuallyEnded)
-        } else {
-            timerRunning = false
-            timerEndDate = nil
-            focusSessionStarted = false
-        }
         refreshSuggestions()
         showToast("已经离开同桌房间")
     }
@@ -781,11 +760,7 @@ final class AppModel: ObservableObject {
 
         switch action {
         case .beginFocus:
-            if currentDeskRoom == nil {
-                beginFocusSession()
-            } else {
-                activeSheet = .desk
-            }
+            activeSheet = .start
         case .resumeFocus:
             resumeTimer()
             showToast("继续这一段")
@@ -861,38 +836,12 @@ final class AppModel: ObservableObject {
                     primaryOption: PresenceSuggestionOption(title: "打开留声机", action: .openPhonograph),
                     context: .focusCompleted(partnerID: partner.id)
                 ))
-                memory.makeDraft(
-                    title: "\(partner.name)这一段",
-                    mood: .warm,
-                    observation: "这一段活动已经结束，适合把刚刚发生的细节留下来。",
-                    keyMoment: "结束时的那一刻",
-                    delivery: .activityEnd,
-                    sourceEvent: .activityEnded,
-                    sourceActivityID: nil,
-                    creatorName: "我",
-                    participantNames: [partner.name],
-                    visibility: .shared,
-                    resourceReferences: lastActivityEndedEvent.map { [MemoryResourceReference(kind: "activityEndedEvent", value: $0.id.uuidString)] } ?? []
-                )
             } else {
                 offerSuggestion(PresenceSuggestion(
                     message: "这一段已经完成，先休息一会儿。",
                     primaryOption: PresenceSuggestionOption(title: "休息一下", action: .beginRest),
                     context: .focusCompleted(partnerID: nil)
                 ))
-                memory.makeDraft(
-                    title: "这一段活动",
-                    mood: .quiet,
-                    observation: "这一段活动已经结束。",
-                    keyMoment: "结束时的那一刻",
-                    delivery: .activityEnd,
-                    sourceEvent: .activityEnded,
-                    sourceActivityID: nil,
-                    creatorName: "我",
-                    participantNames: [],
-                    visibility: .shared,
-                    resourceReferences: lastActivityEndedEvent.map { [MemoryResourceReference(kind: "activityEndedEvent", value: $0.id.uuidString)] } ?? []
-                )
             }
         }
     }
@@ -903,7 +852,7 @@ final class AppModel: ObservableObject {
 
     private func endFocusSession(reason: ActivityEndReason) {
         guard let session = activeFocusSession else { return }
-        let partner = currentDeskPartner
+        let partner = session.roomID == currentDeskRoom?.id ? currentDeskPartner : nil
         activeFocusSession = nil
         remainingSeconds = 0
         timerRunning = false
@@ -919,38 +868,12 @@ final class AppModel: ObservableObject {
                 primaryOption: PresenceSuggestionOption(title: "打开留声机", action: .openPhonograph),
                 context: .focusCompleted(partnerID: partner.id)
             ))
-            memory.makeDraft(
-                title: "\(partner.name)这一段",
-                mood: .warm,
-                observation: "这一段活动已经结束，适合把刚刚发生的细节留下来。",
-                keyMoment: "结束时的那一刻",
-                delivery: .activityEnd,
-                sourceEvent: .activityEnded,
-                sourceActivityID: session.id,
-                creatorName: "我",
-                participantNames: [partner.name],
-                visibility: .shared,
-                resourceReferences: lastActivityEndedEvent.map { [MemoryResourceReference(kind: "activityEndedEvent", value: $0.id.uuidString)] } ?? []
-            )
         } else {
             offerSuggestion(PresenceSuggestion(
                 message: "这一段已经完成，先休息一会儿。",
                 primaryOption: PresenceSuggestionOption(title: "休息一下", action: .beginRest),
                 context: .focusCompleted(partnerID: nil)
             ))
-            memory.makeDraft(
-                title: "这一段活动",
-                mood: .quiet,
-                observation: "这一段活动已经结束。",
-                keyMoment: "结束时的那一刻",
-                delivery: .activityEnd,
-                sourceEvent: .activityEnded,
-                sourceActivityID: session.id,
-                creatorName: "我",
-                participantNames: [],
-                visibility: .shared,
-                resourceReferences: lastActivityEndedEvent.map { [MemoryResourceReference(kind: "activityEndedEvent", value: $0.id.uuidString)] } ?? []
-            )
         }
     }
 
@@ -1014,17 +937,6 @@ final class AppModel: ObservableObject {
         let day = Self.currentDayKey()
         guard !dailyTodoSuggestedDays.contains(day) else { return }
         dailyTodoSuggestedDays.insert(day)
-        memory.makeDraft(
-            title: "今日留声机",
-            mood: .bright,
-            observation: "今天的 Todo 已全部完成，可以把今天收尾成一张回忆卡。",
-            keyMoment: "今天全部完成的那一刻",
-            delivery: .scheduled,
-            sourceEvent: .dailyTodoCompleted,
-            creatorName: "我",
-            participantNames: [],
-            visibility: .shared
-        )
         offerSuggestion(PresenceSuggestion(
             message: "今天放在桌上的事都完成了。要用留声机记下今天吗？",
             primaryOption: PresenceSuggestionOption(title: "打开留声机", action: .openPhonograph),

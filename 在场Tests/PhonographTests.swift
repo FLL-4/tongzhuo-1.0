@@ -15,12 +15,12 @@ struct PhonographTests {
         let interrupted = MemoryDraft(
             id: UUID(), sourceActivityID: nil, sourceEvent: .manual, creatorName: "我",
             participantNames: [], visibility: .shared, resourceReferences: [],
+            voiceAttachment: nil,
             confirmedAt: nil, deletedAt: nil, title: "中断的留声", mood: .quiet,
             observation: "生成过程中退出了应用", keyMoment: "重新打开时",
-            imageTemplateID: nil, imageTemplateName: nil, imagePrompt: nil,
-            suggestedTags: [], suggestedBGM: nil, suggestedDeliveryNote: nil,
-            reviewState: .generating, deliveryPlan: .activityEnd,
-            deliveryState: .notScheduled, imageData: nil, voiceNoteID: nil,
+            imagePrompt: nil,
+            reviewState: .generating, deliveryPlan: .oneHourLater,
+            deliveryState: .notScheduled, imageData: nil,
             createdAt: Date()
         )
         try persistence.save(drafts: [interrupted], cards: [])
@@ -34,33 +34,16 @@ struct PhonographTests {
         #expect(persistence.load().drafts.first?.reviewState == .draft)
     }
 
-    @Test("Template pool matches phonograph context")
-    func templatePoolMatchesDraftContext() {
-        let pool = MemoryCardTemplatePool()
-        let draft = MemoryDraftingResult(
-            title: "雨夜书桌",
-            mood: .quiet,
-            observation: "今晚在台灯下把代码整理完了，窗外一直在下雨。",
-            keyMoment: "窗边的雨声和桌面那盏灯",
-            keywords: []
-        )
-
-        let template = pool.selectTemplate(for: draft)
-
-        #expect(template.id == "rainy-desk" || template.id == "desk-focus")
-        #expect(!pool.previewTemplates(for: draft).isEmpty)
-    }
-
-    @Test("Draft generation stores template, prompt, and metadata")
+    @Test("Draft generation stores prompt and image")
     func memoryDraftCarriesMockGenerationArtifacts() async throws {
-        let controller = MemoryController(imageGenerator: PhonographImmediateImageGenerator(), persistence: MemoryPersistence())
+        let controller = MemoryController(imageGenerator: PhonographImmediateImageGenerator(), persistence: testPersistence())
 
         controller.makeDraft(
             title: "雨夜书桌",
             mood: .quiet,
             observation: "今晚在台灯下把代码整理完了，窗外一直在下雨。",
             keyMoment: "窗边的雨声和桌面那盏灯",
-            delivery: .activityEnd
+            delivery: .oneHourLater
         )
 
         let draft = try #require(controller.drafts.first)
@@ -70,30 +53,33 @@ struct PhonographTests {
 
         let ready = try #require(controller.drafts.first)
         #expect(ready.reviewState == .ready)
-        #expect(ready.imageTemplateID != nil)
-        #expect(ready.imageTemplateName != nil)
         #expect(ready.imagePrompt?.isEmpty == false)
-        #expect(ready.suggestedTags.isEmpty == false)
-        #expect(ready.suggestedBGM != nil)
-        #expect(ready.suggestedDeliveryNote != nil)
+        #expect(ready.imageData != nil)
     }
 
     @Test("Confirmed card tracks delivery lifecycle")
     func confirmedCardTracksDeliveryLifecycle() async throws {
-        let controller = MemoryController(imageGenerator: PhonographImmediateImageGenerator(), persistence: MemoryPersistence())
+        let controller = MemoryController(imageGenerator: PhonographImmediateImageGenerator(), persistence: testPersistence())
 
         controller.makeDraft(
             title: "列车回声",
             mood: .tender,
             observation: "从车站回来的路上，想把那句没说完的话留住。",
             keyMoment: "车窗里的灯光",
-            delivery: .scheduled
+            delivery: .bedtime
         )
 
         let draft = try #require(controller.drafts.first)
         controller.generateImage(for: draft)
         try await Task.sleep(for: .milliseconds(40))
 
+        controller.attachVoiceAttachment(
+            noteID: UUID(),
+            filename: "test.m4a",
+            duration: 3,
+            createdAt: Date(),
+            delivery: .focusEnd
+        )
         let ready = try #require(controller.drafts.first)
         controller.confirm(ready)
 
@@ -112,20 +98,27 @@ struct PhonographTests {
 
     @Test("Delivery plan sync reflects strategy")
     func deliveryPlanSyncReflectsStrategy() async throws {
-        let controller = MemoryController(imageGenerator: PhonographImmediateImageGenerator(), persistence: MemoryPersistence())
+        let controller = MemoryController(imageGenerator: PhonographImmediateImageGenerator(), persistence: testPersistence())
 
         controller.makeDraft(
             title: "午后小停顿",
             mood: .bright,
             observation: "杯子放下的时候，桌面终于安静了一点。",
             keyMoment: "放下水杯的那一秒",
-            delivery: .scheduled
+            delivery: .bedtime
         )
 
         let draft = try #require(controller.drafts.first)
-        controller.generateImage(for: draft, preferredTemplateID: "little-break")
+        controller.generateImage(for: draft)
         try await Task.sleep(for: .milliseconds(40))
 
+        controller.attachVoiceAttachment(
+            noteID: UUID(),
+            filename: "test.m4a",
+            duration: 3,
+            createdAt: Date(),
+            delivery: .focusEnd
+        )
         let ready = try #require(controller.drafts.first)
         controller.confirm(ready)
 
@@ -137,20 +130,20 @@ struct PhonographTests {
         #expect(synced.deliveryState == .delivered)
     }
 
-    @Test("Archive view source should only expose confirmed cards")
-    func archiveSourceShouldOnlyExposeConfirmedCards() async throws {
-        let controller = MemoryController(imageGenerator: PhonographImmediateImageGenerator(), persistence: MemoryPersistence())
+    @Test("Memory view source should only expose confirmed cards")
+    func memorySourceShouldOnlyExposeConfirmedCards() async throws {
+        let controller = MemoryController(imageGenerator: PhonographImmediateImageGenerator(), persistence: testPersistence())
 
         controller.makeDraft(
             title: "雨夜书桌",
             mood: .quiet,
             observation: "台灯和雨声一起落下来。",
             keyMoment: "雨打在窗上那一刻",
-            delivery: .archiveOnly
+            delivery: .oneHourLater
         )
 
         let draft = try #require(controller.drafts.first)
-        controller.generateImage(for: draft, preferredTemplateID: "rainy-desk")
+        controller.generateImage(for: draft)
         try await Task.sleep(for: .milliseconds(40))
 
         let ready = try #require(controller.drafts.first)
@@ -158,6 +151,12 @@ struct PhonographTests {
 
         #expect(controller.cards.allSatisfy { $0.reviewState == .confirmed })
     }
+}
+
+private func testPersistence() -> MemoryPersistence {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("phonograph-test-\(UUID().uuidString).json")
+    return MemoryPersistence(fileURL: url)
 }
 
 private struct PhonographImmediateImageGenerator: MemoryImageGenerating {

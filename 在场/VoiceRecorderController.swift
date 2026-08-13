@@ -159,6 +159,10 @@ final class VoiceRecorderController: NSObject, ObservableObject {
         phase == .playing && playingNoteID == note.id
     }
 
+    func fileURL(for note: SavedVoiceNote) -> URL {
+        recordingsDirectory.appendingPathComponent(note.filename)
+    }
+
     @discardableResult
     func saveDraft(delivery: VoiceDelivery = .focusEnd) -> SavedVoiceNote? {
         guard let draftURL, hasDraft else { return nil }

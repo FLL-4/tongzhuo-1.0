@@ -19,7 +19,7 @@ enum LayoutMetrics {
     static let windowDragHeight: CGFloat = 18
     static let sceneControlClearance: CGFloat = 84
     static let compactNavigationHeight: CGFloat = 64
-    static let sheetMaxWidth: CGFloat = 520
+    static let sheetMaxWidth: CGFloat = 460
 }
 
 enum InteractionMetrics {

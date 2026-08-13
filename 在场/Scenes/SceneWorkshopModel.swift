@@ -67,17 +67,19 @@ struct MockSceneSpecDrafter: SceneSpecDrafting {
             )
         }
 
+        // Free-form descriptions should not silently inherit an unrelated
+        // preset. Keep the editable details empty for the user to complete.
         return GeneratedSceneSpec(
             sceneID: sceneID,
-            name: "林间小屋",
-            location: normalized.isEmpty ? "安静的林间木屋" : normalized,
+            name: "",
+            location: "",
             timeOfDay: .dusk,
-            weather: "天气晴朗",
+            weather: "",
             mood: .warm,
-            windowView: "树林与远处的山",
-            lighting: "壁炉和桌面台灯",
-            keyObjects: ["笔记本", "热饮", "针织外套"],
-            ambientPreset: .fireplace,
+            windowView: "",
+            lighting: "",
+            keyObjects: [],
+            ambientPreset: .quiet,
             effectPreset: .none
         )
     }
@@ -181,7 +183,7 @@ final class SceneWorkshopModel: ObservableObject {
                 return
             } catch {
                 guard job?.request.id == request.id else { return }
-                let message = "场景暂时没有生成，请再试一次。"
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 job?.state = .failed(message: message)
                 errorMessage = message
                 step = .configure

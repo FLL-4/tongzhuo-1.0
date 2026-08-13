@@ -33,27 +33,6 @@ struct SceneStageView: View {
                     roomCode: model.currentDeskRoom?.code,
                     layout: layout
                 )
-
-                if model.activeFocusSession != nil {
-                    Button {
-                        endFocusConfirmationPresented = true
-                    } label: {
-                        Label("结束专注", systemImage: "stop.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .padding(.horizontal, 10)
-                            .frame(minHeight: 32)
-                    }
-                    .buttonStyle(ZaichangPlainButtonStyle())
-                    .foregroundStyle(.white)
-                    .background(.black.opacity(0.28))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(.white.opacity(0.58), lineWidth: 1)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .adaptiveHitTarget(minHeight: 32)
-                    .accessibilityLabel("结束专注")
-                }
             }
             .shadow(color: .black.opacity(0.55), radius: 8, y: 2)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -156,7 +135,11 @@ struct SceneStageView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
-            SceneControlsView(model: model, layout: layout)
+            SceneControlsView(
+                model: model,
+                layout: layout,
+                endFocusConfirmationPresented: $endFocusConfirmationPresented
+            )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 .padding(.horizontal, layout == .compact ? 14 : 22)
                 .padding(.bottom, 22 + bottomInset)
@@ -172,7 +155,7 @@ struct SceneStageView: View {
             }
             Button("继续专注", role: .cancel) {}
         } message: {
-            Text("结束后会引导你进入留声机，Todo 不会被自动完成。")
+            Text("Todo 不会被自动完成")
         }
     }
 }
@@ -390,6 +373,7 @@ private extension PresenceSuggestionAction {
 private struct SceneControlsView: View {
     @ObservedObject var model: AppModel
     let layout: SceneStageLayout
+    @Binding var endFocusConfirmationPresented: Bool
     @State private var presencePickerPresented = false
 
     @ViewBuilder
@@ -454,6 +438,18 @@ private struct SceneControlsView: View {
                 .background(Palette.surface2)
             }
 
+            if model.supportsWeatherEffects {
+                SceneIconButton(
+                    symbol: "cloud.sun",
+                    isOn: model.weatherEffectsEnabled,
+                    onColor: Palette.blue,
+                    help: "窗外天气",
+                    action: model.toggleWeather
+                )
+            }
+
+            endFocusControl()
+
             HStack(spacing: 4) {
                 Button { model.toggleTimer() } label: {
                     Image(systemName: model.timerRunning ? "pause" : "play")
@@ -480,15 +476,6 @@ private struct SceneControlsView: View {
             .padding(.horizontal, 5)
             .liquidSceneControl()
 
-            if model.supportsWeatherEffects {
-                SceneIconButton(
-                    symbol: "cloud.sun",
-                    isOn: model.weatherEffectsEnabled,
-                    onColor: Palette.blue,
-                    help: "窗外天气",
-                    action: model.toggleWeather
-                )
-            }
             Menu {
                 Button {
                     model.toggleAmbient()
@@ -544,6 +531,19 @@ private struct SceneControlsView: View {
             .buttonStyle(ZaichangPlainButtonStyle())
             .menuIndicator(.hidden)
 
+            if model.supportsWeatherEffects {
+                SceneIconButton(
+                    symbol: "cloud.sun",
+                    isOn: model.weatherEffectsEnabled,
+                    onColor: Palette.blue,
+                    help: "窗外天气",
+                    action: model.toggleWeather,
+                    compact: true
+                )
+            }
+
+            endFocusControl(compact: true)
+
             HStack(spacing: 2) {
                 Button { model.toggleTimer() } label: {
                     Image(systemName: model.timerRunning ? "pause" : "play")
@@ -568,11 +568,6 @@ private struct SceneControlsView: View {
             .liquidSceneControl()
 
             Menu {
-                if model.supportsWeatherEffects {
-                    Toggle(isOn: binding(for: \AppModel.weatherEffectsEnabled, toggle: model.toggleWeather)) {
-                        Label("窗外天气", systemImage: "cloud.sun")
-                    }
-                }
                 Toggle(isOn: binding(for: \AppModel.ambientEnabled, toggle: model.toggleAmbient)) {
                     Label(model.selectedScene.ambientPreset.displayName, systemImage: "speaker.wave.2")
                 }
@@ -611,6 +606,20 @@ private struct SceneControlsView: View {
             }
         )
     }
+
+    @ViewBuilder
+    private func endFocusControl(compact: Bool = false) -> some View {
+        if model.activeFocusSession != nil {
+            SceneIconButton(
+                symbol: "stop.fill",
+                isOn: true,
+                onColor: Palette.ink,
+                help: "结束专注",
+                action: { endFocusConfirmationPresented = true },
+                compact: compact
+            )
+        }
+    }
 }
 
 private struct SceneIconButton: View {
@@ -619,13 +628,14 @@ private struct SceneIconButton: View {
     let onColor: Color
     let help: String
     let action: () -> Void
+    var compact = false
 
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(isOn ? onColor : Color.gray)
-                .frame(width: 46, height: 46)
+                .frame(width: compact ? 44 : 46, height: compact ? 44 : 46)
                 .liquidSceneControl()
         }
         .buttonStyle(ZaichangPlainButtonStyle())

@@ -327,7 +327,6 @@ protocol SceneGenerating {
 
 struct HybridSceneGenerator: SceneGenerating {
     private let configuration: APIConfiguration
-    private let mock = MockSceneGenerator()
 
     init(configuration: APIConfiguration = .load()) {
         self.configuration = configuration
@@ -337,9 +336,8 @@ struct HybridSceneGenerator: SceneGenerating {
         _ request: SceneGenerationRequest,
         progress: @escaping (SceneGenerationState) -> Void
     ) async throws -> SceneGenerationResult {
-        guard configuration.isImageModelConfigured,
-              configuration.image.provider == .dashScope else {
-            return try await mock.generate(request, progress: progress)
+        guard configuration.isSceneImageGenerationConfigured else {
+            throw SceneGenerationError.notConfigured
         }
         return try await RemoteSceneGenerator(configuration: configuration)
             .generate(request, progress: progress)
@@ -520,12 +518,14 @@ private struct SceneImageRequest: Encodable {
 }
 
 enum SceneGenerationError: LocalizedError {
+    case notConfigured
     case invalidEndpoint
     case invalidResponse
     case remote(String)
 
     var errorDescription: String? {
         switch self {
+        case .notConfigured: "场景图像 API 尚未配置。"
         case .invalidEndpoint: "场景图像接口地址无效。"
         case .invalidResponse: "场景图像接口没有返回可用图片。"
         case .remote(let message): "场景图像接口请求失败：\(message.prefix(180))"

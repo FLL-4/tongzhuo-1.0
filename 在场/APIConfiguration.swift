@@ -65,6 +65,17 @@ struct APIConfiguration: Equatable {
 
     var isTextModelConfigured: Bool { text.isConfigured }
     var isImageModelConfigured: Bool { image.isConfigured }
+    var isSceneImageGenerationConfigured: Bool {
+        image.provider == .dashScope
+            && image.isConfigured
+            && !image.sceneModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    var isDeskPetImageGenerationConfigured: Bool {
+        image.isConfigured && !image.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    var isMemoryImageGenerationConfigured: Bool {
+        image.isConfigured && !image.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     static var defaultURL: URL {
         if let override = ProcessInfo.processInfo.environment["ZAICHANG_API_CONFIG"], !override.isEmpty {

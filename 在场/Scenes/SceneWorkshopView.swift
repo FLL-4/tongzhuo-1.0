@@ -27,9 +27,9 @@ struct SceneWorkshopSheet: View {
         .background(Palette.surface2)
         .foregroundStyle(Palette.ink)
 #if os(macOS)
-        .frame(width: 640, height: 580)
+        .frame(width: 520, height: 580)
 #else
-        .frame(maxWidth: 640)
+        .frame(maxWidth: 520)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Palette.surface2)

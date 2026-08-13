@@ -6,6 +6,7 @@ struct CompactNavigationBar: View {
     var body: some View {
         HStack(spacing: 2) {
             CompactNavigationButton(symbol: "house.fill", title: "在场", isActive: true) {}
+            CompactNavigationButton(symbol: "play.fill", title: "开始") { model.activeSheet = .start }
             CompactNavigationButton(symbol: "person.2", title: "同桌") { model.activeSheet = .desk }
             CompactNavigationButton(title: "留声") { model.activeSheet = .phonograph } icon: {
                 AppGlyph(.phonograph, size: 20)
@@ -60,6 +61,7 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 6) {
             SidebarButton(symbol: "house", title: "在场", isActive: true) {}
+            SidebarButton(symbol: "play.fill", title: "开始") { model.activeSheet = .start }
             SidebarButton(symbol: "person.2", title: "同桌") { model.activeSheet = .desk }
             SidebarButton(title: "留声") { model.activeSheet = .phonograph } icon: {
                 AppGlyph(.phonograph, size: 20)

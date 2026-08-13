@@ -215,15 +215,14 @@ struct MockDeskPetGenerator: DeskPetGenerating {
 
 struct HybridDeskPetGenerator: DeskPetGenerating {
     private let configuration: APIConfiguration
-    private let mock = MockDeskPetGenerator()
 
     init(configuration: APIConfiguration = .load()) {
         self.configuration = configuration
     }
 
     func generate(photoData: Data, partnerName: String) async throws -> Data {
-        guard configuration.isImageModelConfigured else {
-            return try await mock.generate(photoData: photoData, partnerName: partnerName)
+        guard configuration.isDeskPetImageGenerationConfigured else {
+            throw DeskPetError.notConfigured
         }
         let generated = try await RemoteDeskPetGenerator(configuration: configuration)
             .generate(photoData: photoData, partnerName: partnerName)
@@ -421,6 +420,7 @@ private struct DashScopeRequest: Encodable {
 }
 
 private extension DeskPetError {
+    static var notConfigured: DeskPetError { .failed("图像 API 尚未配置") }
     static var invalidEndpoint: DeskPetError { .failed("API 地址无效") }
     static var invalidResponse: DeskPetError { .failed("图像接口没有返回可用图片") }
     static func remote(_ message: String) -> DeskPetError { .failed("图像接口请求失败：\(message)") }

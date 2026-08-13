@@ -23,12 +23,14 @@ struct AppShellView: View {
 #endif
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
+            case .start:
+                StartFocusSheet(model: model)
             case .desk:
                 DeskSheet(model: model)
             case .phonograph:
                 PhonographSheet(model: model, memory: model.memory, recorder: model.voiceRecorder)
             case .memoryHistory:
-                MemoryHistoryView(memory: model.memory)
+                MemoryHistoryView(memory: model.memory, recorder: model.voiceRecorder)
             case .scenes:
                 ScenePickerSheet(model: model)
             case .sceneWorkshop:

@@ -6,7 +6,6 @@ struct FocusSessionConfiguration: Equatable {
     let durationMinutes: Int
     let taskIDs: [FocusTask.ID]
     let customTaskTitle: String?
-    let sceneID: RoomScene.ID?
 
     init(durationMinutes: Int, taskID: FocusTask.ID) {
         self.init(durationMinutes: durationMinutes, taskIDs: [taskID])
@@ -15,13 +14,11 @@ struct FocusSessionConfiguration: Equatable {
     init(
         durationMinutes: Int,
         taskIDs: [FocusTask.ID] = [],
-        customTaskTitle: String? = nil,
-        sceneID: RoomScene.ID? = nil
+        customTaskTitle: String? = nil
     ) {
         self.durationMinutes = durationMinutes
         self.taskIDs = taskIDs
         self.customTaskTitle = customTaskTitle
-        self.sceneID = sceneID
     }
 
     var taskID: FocusTask.ID? { taskIDs.first }
@@ -29,20 +26,18 @@ struct FocusSessionConfiguration: Equatable {
 
 struct FocusSession: Equatable, Identifiable {
     let id: UUID
-    let roomID: DeskRoom.ID
+    let roomID: DeskRoom.ID?
     let taskIDs: [FocusTask.ID]
     let customTaskTitle: String?
     let durationSeconds: Int
-    let sceneID: RoomScene.ID
     let startedAt: Date
 
     init(
         id: UUID,
-        roomID: DeskRoom.ID,
+        roomID: DeskRoom.ID?,
         taskIDs: [FocusTask.ID],
         customTaskTitle: String?,
         durationSeconds: Int,
-        sceneID: RoomScene.ID,
         startedAt: Date
     ) {
         self.id = id
@@ -50,7 +45,6 @@ struct FocusSession: Equatable, Identifiable {
         self.taskIDs = taskIDs
         self.customTaskTitle = customTaskTitle
         self.durationSeconds = durationSeconds
-        self.sceneID = sceneID
         self.startedAt = startedAt
     }
 
@@ -71,41 +65,24 @@ struct ActivityEndedEvent: Equatable, Identifiable {
 
 enum FocusSessionServiceError: Error, Equatable {
     case invalidDuration
-    case noScenes
 }
 
 protocol FocusSessionServicing {
     func startSession(
-        roomID: DeskRoom.ID,
-        configuration: FocusSessionConfiguration,
-        candidateScenes: [RoomScene]
+        roomID: DeskRoom.ID?,
+        configuration: FocusSessionConfiguration
     ) throws -> FocusSession
 
     func endSession(_ session: FocusSession, reason: ActivityEndReason) -> ActivityEndedEvent
 }
 
 struct MockFocusSessionService: FocusSessionServicing {
-    private let sceneSelector: ([RoomScene]) -> RoomScene?
-
-    init(sceneSelector: @escaping ([RoomScene]) -> RoomScene? = { $0.randomElement() }) {
-        self.sceneSelector = sceneSelector
-    }
-
     func startSession(
-        roomID: DeskRoom.ID,
-        configuration: FocusSessionConfiguration,
-        candidateScenes: [RoomScene]
+        roomID: DeskRoom.ID?,
+        configuration: FocusSessionConfiguration
     ) throws -> FocusSession {
         guard FocusSessionConfiguration.allowedDurations.contains(configuration.durationMinutes) else {
             throw FocusSessionServiceError.invalidDuration
-        }
-        guard !candidateScenes.isEmpty else {
-            throw FocusSessionServiceError.noScenes
-        }
-        guard let scene = configuration.sceneID.flatMap({ selectedID in
-            candidateScenes.first { $0.id == selectedID }
-        }) ?? sceneSelector(candidateScenes) else {
-            throw FocusSessionServiceError.noScenes
         }
 
         return FocusSession(
@@ -114,7 +91,6 @@ struct MockFocusSessionService: FocusSessionServicing {
             taskIDs: configuration.taskIDs,
             customTaskTitle: configuration.customTaskTitle,
             durationSeconds: configuration.durationMinutes * 60,
-            sceneID: scene.id,
             startedAt: Date()
         )
     }
