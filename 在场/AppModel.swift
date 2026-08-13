@@ -214,7 +214,7 @@ final class AppModel: ObservableObject {
     @Published var activeSheet: AppSheet?
     @Published var toastMessage: String?
     @Published var deskSession: DeskSessionState = .disconnected {
-        didSet { deskPet.activePartnerID = currentDeskPartner?.id }
+        didSet { deskPet.setActivePartner(currentDeskPartner) }
     }
     @Published var deskErrorMessage: String?
     @Published private(set) var activeSuggestion: PresenceSuggestion?
@@ -376,7 +376,7 @@ final class AppModel: ObservableObject {
             message: "\(partner.name)拍了拍你",
             kind: .received
         )
-        if deskPet.profile?.isEnabled != true {
+        if deskPet.partnerProfile?.isEnabled != true {
             showToast("\(partner.name)拍了拍你")
         }
     }
