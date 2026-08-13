@@ -282,8 +282,8 @@ struct AppModelTests {
         let added = model.addTask(title: "  写完演示说明  ")
 
         #expect(added)
-        #expect(model.tasks.last?.title == "写完演示说明")
-        #expect(model.tasks.last?.isCompleted == false)
+        #expect(model.tasks.first?.title == "写完演示说明")
+        #expect(model.tasks.first?.isCompleted == false)
     }
 
     @Test("桌上事项拒绝重复内容并限制为五项")

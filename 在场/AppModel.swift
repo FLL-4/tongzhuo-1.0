@@ -537,7 +537,7 @@ final class AppModel: ObservableObject {
         let selectableTaskIDs = Set(incompleteTasks.map(\.id))
         guard let room = currentDeskRoom,
               taskIDs.isSubset(of: selectableTaskIDs),
-              sceneID.map({ selectedID in RoomSceneCatalog.builtIn.contains(where: { $0.id == selectedID }) }) ?? true else { return false }
+              sceneID.map({ selectedID in scenes.contains(where: { $0.id == selectedID }) }) ?? true else { return false }
         let customTaskTitle = rawCustomTaskTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedCustomTaskTitle = customTaskTitle?.isEmpty == false ? customTaskTitle : nil
 
@@ -550,7 +550,7 @@ final class AppModel: ObservableObject {
                     customTaskTitle: normalizedCustomTaskTitle,
                     sceneID: sceneID
                 ),
-                candidateScenes: RoomSceneCatalog.builtIn
+                candidateScenes: scenes
             )
             guard let scene = scenes.first(where: { $0.id == session.sceneID }) else { return false }
 

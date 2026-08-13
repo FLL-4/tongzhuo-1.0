@@ -139,7 +139,12 @@ struct DeskSheet: View {
                     name: "你",
                     detail: "\(model.presence.title) · \(model.timerText)",
                     color: Color(red: 0.34, green: 0.28, blue: 0.24)
-                )
+        )
+        .onAppear {
+            if selectedSceneID == nil {
+                selectedSceneID = model.selectedSceneID
+            }
+        }
 
                 HStack(spacing: 6) {
                     Rectangle().fill(Color.white.opacity(0.15)).frame(height: 1)
@@ -248,7 +253,7 @@ struct DeskSheet: View {
                 Text("选择场景").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.muted)
                 Picker("场景", selection: $selectedSceneID) {
                     Text("请选择场景").tag(RoomScene.ID?.none)
-                    ForEach(RoomSceneCatalog.builtIn) { scene in Text(scene.name).tag(Optional(scene.id)) }
+                    ForEach(model.scenes) { scene in Text(scene.name).tag(Optional(scene.id)) }
                 }
                 .pickerStyle(.menu)
             }
