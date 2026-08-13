@@ -148,7 +148,7 @@ struct DeskPetSection: View {
                     Button {
                         controller.setEnabled(!profile.isEnabled)
                     } label: {
-                        Label(profile.isEnabled ? "移除" : "放到场景里", systemImage: profile.isEnabled ? "eye.slash" : "sparkles")
+                        Label(profile.isEnabled ? "隐藏" : "放到场景里", systemImage: profile.isEnabled ? "eye.slash" : "sparkles")
                             .frame(maxWidth: .infinity, minHeight: 34)
                     }
                     .buttonStyle(.borderedProminent)
