@@ -14,9 +14,14 @@ struct VoiceRecorderPanel: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: recorder.isRecording ? "stop.circle.fill" : "record.circle")
-                .font(.system(size: 72))
-                .foregroundStyle(recorder.isRecording ? Color(red: 0.86, green: 0.42, blue: 0.36) : Palette.amber)
+            if recorder.isRecording {
+                Image(systemName: "stop.circle.fill")
+                    .font(.system(size: 72))
+                    .foregroundStyle(Color(red: 0.86, green: 0.42, blue: 0.36))
+            } else {
+                AppGlyph(.phonograph, size: 72)
+                    .foregroundStyle(Palette.amber)
+            }
             Text(recorder.elapsedText)
                 .font(.system(size: 14, design: .monospaced))
 

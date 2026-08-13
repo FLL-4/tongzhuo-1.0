@@ -98,58 +98,60 @@ struct ContextPanelView: View {
                     .padding(.vertical, 18)
                     .panelDivider()
 
-                    HStack(spacing: 10) {
-                        Image(systemName: "record.circle")
-                            .font(.system(size: 20))
-                            .foregroundStyle(Palette.amber)
-                            .frame(width: 38, height: 38)
-                            .background(Color(red: 0.42, green: 0.29, blue: 0.20))
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                        VStack(alignment: .leading, spacing: 3) {
-                            if let note = recorder.savedNotes.first {
-                                Text("最近保存的留声").font(.system(size: 9)).foregroundStyle(Palette.muted)
-                                Text(note.delivery.title).font(.system(size: 11, weight: .semibold))
-                                Text("你 · \(durationText(note.duration))").font(.system(size: 9)).foregroundStyle(Palette.muted)
-                            } else {
-                                Text("一段留声等待播放").font(.system(size: 9)).foregroundStyle(Palette.muted)
-                                Text("“等你忙完再听”").font(.system(size: 11, weight: .semibold))
-                                Text("阿禾 · 00:18").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                    NoticeCard {
+                        HStack(spacing: 10) {
+                            AppGlyph(.phonograph, size: 20)
+                                .foregroundStyle(Palette.amber)
+                                .frame(width: 38, height: 38)
+                                .background(Color(red: 0.42, green: 0.29, blue: 0.20))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            VStack(alignment: .leading, spacing: 3) {
+                                if let note = recorder.savedNotes.first {
+                                    Text("最近保存的留声").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                                    Text(note.delivery.title).font(.system(size: 11, weight: .semibold))
+                                    Text("你 · \(durationText(note.duration))").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                                } else {
+                                    Text("一段留声等待播放").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                                    Text("“等你忙完再听”").font(.system(size: 11, weight: .semibold))
+                                    Text("阿禾 · 00:18").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                                }
                             }
-                        }
-                        Spacer()
-                        Button {
-                            if let note = recorder.savedNotes.first {
-                                recorder.togglePlayback(note)
-                            } else {
-                                model.showToast("这段示例留声还没有音频文件")
+                            Spacer()
+                            Button {
+                                if let note = recorder.savedNotes.first {
+                                    recorder.togglePlayback(note)
+                                } else {
+                                    model.showToast("这段示例留声还没有音频文件")
+                                }
+                            } label: {
+                                Image(systemName: recorder.savedNotes.first.map(recorder.isPlaying) == true ? "pause.fill" : "play.fill")
+                                    .foregroundStyle(Color(red: 0.18, green: 0.14, blue: 0.10))
+                                    .adaptiveHitTarget(minWidth: 32, minHeight: 32)
+                                    .background(Palette.amber)
+                                    .clipShape(Circle())
                             }
-                        } label: {
-                            Image(systemName: recorder.savedNotes.first.map(recorder.isPlaying) == true ? "pause.fill" : "play.fill")
-                                .foregroundStyle(Color(red: 0.18, green: 0.14, blue: 0.10))
-                                .adaptiveHitTarget(minWidth: 32, minHeight: 32)
-                                .background(Palette.amber)
-                                .clipShape(Circle())
+                            .buttonStyle(ZaichangPlainButtonStyle())
+                            .accessibilityLabel(recorder.savedNotes.first.map(recorder.isPlaying) == true ? "暂停最近留声" : "播放最近留声")
+                            .help(recorder.savedNotes.first.map(recorder.isPlaying) == true ? "暂停最近留声" : "播放最近留声")
                         }
-                        .buttonStyle(ZaichangPlainButtonStyle())
-                        .accessibilityLabel(recorder.savedNotes.first.map(recorder.isPlaying) == true ? "暂停最近留声" : "播放最近留声")
-                        .help(recorder.savedNotes.first.map(recorder.isPlaying) == true ? "暂停最近留声" : "播放最近留声")
                     }
-                    .padding(11)
-                    .background(Color(red: 0.15, green: 0.14, blue: 0.12))
-                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color(red: 0.27, green: 0.23, blue: 0.19)))
-                    .clipShape(RoundedRectangle(cornerRadius: 7))
                     .padding(.top, 18)
+
+                    NoticeCard {
+                        HStack(spacing: 0) {
+                            Text("阿禾在20:34拍了拍你")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .padding(.top, 14)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 22)
             }
 
-            HStack(spacing: 8) {
-                PanelButton(title: model.deskActionTitle, symbol: "person.2", isProminent: false) { model.activeSheet = .desk }
-                PanelButton(title: "留声机", symbol: "record.circle", isProminent: true) { model.openPhonograph() }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 18)
         }
         .background(Color(red: 0.115, green: 0.122, blue: 0.137))
     }
@@ -282,6 +284,18 @@ struct ContextPanelView: View {
             await Task.yield()
             taskEditorFocused = true
         }
+    }
+}
+
+private struct NoticeCard<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .padding(11)
+            .background(Color(red: 0.15, green: 0.14, blue: 0.12))
+            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color(red: 0.27, green: 0.23, blue: 0.19)))
+            .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 }
 

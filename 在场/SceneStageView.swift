@@ -202,7 +202,7 @@ private struct PartnerPopover: View {
 
             Divider().overlay(Palette.line)
 
-            PopoverAction(title: "留声机", symbol: "record.circle") {
+            PopoverAction(title: "留声机") {
                 open(.phonograph)
             }
             PopoverAction(title: "查看同桌房间", symbol: "person.2") {
@@ -267,13 +267,24 @@ private struct SceneStageHeader: View {
 
 private struct PopoverAction: View {
     let title: String
-    let symbol: String
+    let symbol: String?
     let action: () -> Void
+
+    init(title: String, symbol: String? = nil, action: @escaping () -> Void) {
+        self.title = title
+        self.symbol = symbol
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: symbol).frame(width: 18)
+                if let symbol {
+                    Image(systemName: symbol).frame(width: 18)
+                } else {
+                    AppGlyph(.phonograph, size: 18)
+                        .frame(width: 18)
+                }
                 Text(title)
                 Spacer()
                 Image(systemName: "chevron.right")

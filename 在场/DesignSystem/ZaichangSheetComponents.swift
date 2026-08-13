@@ -4,19 +4,45 @@ import SwiftUI
 
 struct PanelButton: View {
     let title: String
-    let symbol: String
     let isProminent: Bool
     let action: () -> Void
+    let icon: AnyView
+
+    init(symbol: String, title: String, isProminent: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.isProminent = isProminent
+        self.action = action
+        self.icon = AnyView(Image(systemName: symbol))
+    }
+
+    init(title: String, symbol: String, isProminent: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.isProminent = isProminent
+        self.action = action
+        self.icon = AnyView(Image(systemName: symbol))
+    }
+
+    init(title: String, isProminent: Bool, action: @escaping () -> Void, @ViewBuilder icon: () -> some View) {
+        self.title = title
+        self.isProminent = isProminent
+        self.action = action
+        self.icon = AnyView(icon())
+    }
 
     var body: some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .adaptiveFullWidthHitTarget(minHeight: 38)
-                .foregroundStyle(isProminent ? Color(red: 0.17, green: 0.13, blue: 0.09) : Palette.ink)
-                .background(isProminent ? Palette.amber : Palette.surface3)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(isProminent ? Palette.amber : Color.white.opacity(0.16)))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+            HStack(spacing: 8) {
+                icon
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 18)
+                Text(title)
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .adaptiveFullWidthHitTarget(minHeight: 38)
+            .foregroundStyle(isProminent ? Color(red: 0.17, green: 0.13, blue: 0.09) : Palette.ink)
+            .background(isProminent ? Palette.amber : Palette.surface3)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(isProminent ? Palette.amber : Color.white.opacity(0.16)))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(ZaichangPlainButtonStyle())
     }

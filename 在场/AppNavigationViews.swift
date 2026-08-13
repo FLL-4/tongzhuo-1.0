@@ -7,7 +7,9 @@ struct CompactNavigationBar: View {
         HStack(spacing: 2) {
             CompactNavigationButton(symbol: "house.fill", title: "在场", isActive: true) {}
             CompactNavigationButton(symbol: "person.2", title: "同桌") { model.activeSheet = .desk }
-            CompactNavigationButton(symbol: "record.circle", title: "留声") { model.activeSheet = .phonograph }
+            CompactNavigationButton(title: "留声") { model.activeSheet = .phonograph } icon: {
+                AppGlyph(.phonograph, size: 20)
+            }
             CompactNavigationButton(symbol: "chart.bar", title: "此刻") { model.activeSheet = .context }
             CompactNavigationButton(symbol: "photo.on.rectangle", title: "场景") { model.activeSheet = .scenes }
         }
@@ -18,16 +20,29 @@ struct CompactNavigationBar: View {
 }
 
 private struct CompactNavigationButton: View {
-    let symbol: String
     let title: String
     var isActive = false
     let action: () -> Void
+    let icon: AnyView?
+
+    init(symbol: String, title: String, isActive: Bool = false, action: @escaping () -> Void) {
+        self.title = title
+        self.isActive = isActive
+        self.action = action
+        self.icon = AnyView(Image(systemName: symbol).font(.system(size: 16, weight: .medium)))
+    }
+
+    init(title: String, isActive: Bool = false, action: @escaping () -> Void, @ViewBuilder icon: () -> some View) {
+        self.title = title
+        self.isActive = isActive
+        self.action = action
+        self.icon = AnyView(icon())
+    }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 3) {
-                Image(systemName: symbol)
-                    .font(.system(size: 16, weight: .medium))
+                icon
                 Text(title).font(.system(size: 9, weight: .medium))
             }
             .foregroundStyle(isActive ? Palette.amberSoft : Palette.muted)
@@ -46,7 +61,9 @@ struct SidebarView: View {
         VStack(spacing: 6) {
             SidebarButton(symbol: "house", title: "在场", isActive: true) {}
             SidebarButton(symbol: "person.2", title: "同桌") { model.activeSheet = .desk }
-            SidebarButton(symbol: "record.circle", title: "留声") { model.activeSheet = .phonograph }
+            SidebarButton(title: "留声") { model.activeSheet = .phonograph } icon: {
+                AppGlyph(.phonograph, size: 20)
+            }
             SidebarButton(symbol: "book.closed", title: "回忆") { model.activeSheet = .memoryHistory }
             Spacer()
             SidebarButton(symbol: "photo.on.rectangle.angled", title: "场景") { model.activeSheet = .scenes }
@@ -64,16 +81,29 @@ struct SidebarView: View {
 }
 
 private struct SidebarButton: View {
-    let symbol: String
     let title: String
     var isActive = false
     let action: () -> Void
+    let icon: AnyView
+
+    init(symbol: String, title: String, isActive: Bool = false, action: @escaping () -> Void) {
+        self.title = title
+        self.isActive = isActive
+        self.action = action
+        self.icon = AnyView(Image(systemName: symbol).font(.system(size: 17, weight: .medium)))
+    }
+
+    init(title: String, isActive: Bool = false, action: @escaping () -> Void, @ViewBuilder icon: () -> some View) {
+        self.title = title
+        self.isActive = isActive
+        self.action = action
+        self.icon = AnyView(icon())
+    }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 3) {
-                Image(systemName: symbol)
-                    .font(.system(size: 17, weight: .medium))
+                icon
                 Text(title)
                     .font(.system(size: 10, weight: .medium))
             }

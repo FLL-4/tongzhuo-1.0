@@ -6,49 +6,26 @@ struct MemoryHistoryView: View {
 
     var body: some View {
         let cards = memory.cards.filter { $0.reviewState == .confirmed }
-        SheetContainer(eyebrow: "记忆", title: "回忆历史", dismiss: dismiss, maxWidth: 760) {
+        SheetContainer(eyebrow: "回忆", title: "像翻开一本会发光的相册，每一页都只保留最重要的那一刻。", dismiss: dismiss, maxWidth: 760) {
             if cards.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("还没有收藏")
-                        .font(.system(size: 18, weight: .semibold))
-                    Text("确认后的记忆会像一本册子一样放在这里。")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Palette.muted)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 20)
+                Text("确认后的记忆会像一本册子一样放在这里。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 20)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        header(cards: cards)
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 18, alignment: .top)],
-                            spacing: 18
-                        ) {
-                            ForEach(cards) { card in memoryCard(card) }
-                        }
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 18, alignment: .top)],
+                        spacing: 18
+                    ) {
+                        ForEach(cards) { card in memoryCard(card) }
                     }
-                    .padding(.bottom, 12)
+                    .padding(.vertical, 4)
                 }
                 .frame(height: 560)
             }
         }
-    }
-
-    private func header(cards: [MemoryDraft]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("收藏册")
-                    .font(.system(size: 18, weight: .semibold))
-                Text("\(cards.count) 条回忆")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Palette.muted)
-            }
-            Text("像翻开一本会发光的相册，每一页都只保留最重要的那一刻。")
-                .font(.system(size: 12))
-                .foregroundStyle(Palette.muted)
-        }
-        .padding(.horizontal, 2)
     }
 
     private func memoryCard(_ card: MemoryDraft) -> some View {
@@ -115,11 +92,11 @@ struct MemoryHistoryView: View {
             }
             .font(.system(size: 10))
         }
-        .padding(10)
+        .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: 18)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(Palette.surface2)
-                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.line.opacity(0.8), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Palette.line.opacity(0.72), lineWidth: 1))
         )
     }
 

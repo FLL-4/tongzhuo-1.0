@@ -16,9 +16,9 @@ struct PhonographSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 if let draft = memory.drafts.first {
                     draftContent(draft)
-                } else if let card = memory.cards.first {
-                    savedCard(card)
-                } else {
+        } else if let card = memory.cards.first {
+            savedCard(card)
+        } else {
                     draftEditor(
                         title: $title,
                         observation: $observation,
@@ -331,7 +331,7 @@ struct PhonographSheet: View {
     }
 
     private func stepLabel(_ step: String, _ title: String) -> some View {
-        Label("步骤 \(step) · \(title)", systemImage: "record.circle")
+        Label("步骤 \(step) · \(title)", systemImage: "recordingtape")
             .font(.system(size: 12, weight: .semibold))
     }
 
